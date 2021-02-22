@@ -81,7 +81,7 @@ class PoliticalShapley:
             shap_val = shap_gain.sum()
             self.shapley_values[c_prty] = shap_val
         self.shapley_values = self.shapley_values.sort_values(ascending=False)
-        self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_value['value'] > 0].reset_index()
+        self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_value['value'] > 0].reset_index(drop=True)
 
     def get_possible_govt(self):
         return self.legal_coalitions
