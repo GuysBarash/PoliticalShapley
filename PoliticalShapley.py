@@ -73,7 +73,7 @@ class PoliticalShapley:
             reordered['N'] = len(self.parties)
             reordered['S'] = reordered[other_parties].sum(axis=1)
 
-            n_fac = np.math.factorial(len(prty))
+            n_fac = np.math.factorial(len(self.parties))
             s_fac = reordered['S'].apply(np.math.factorial)
             comp_s_fac = (reordered['N'] - reordered['S'] - 1).apply(np.math.factorial)
             gains = reordered['gain']
