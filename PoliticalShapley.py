@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import itertools
+import os
 
 
 def powerset(iterable):
@@ -69,7 +70,7 @@ class PoliticalShapley:
             reordered['gain'] = (reordered['value'] - reordered['value'].shift(-1)).fillna(0).astype(int).clip(0)
             reordered = reordered.loc[self.coalitions_value[c_prty].eq(1), [c for c in reordered.columns
                                                                             if c != 'value']]
-            reordered['N'] = len(prty)
+            reordered['N'] = len(self.parties)
             reordered['S'] = reordered[other_parties].sum(axis=1)
 
             n_fac = np.math.factorial(len(prty))
@@ -80,13 +81,21 @@ class PoliticalShapley:
             shap_val = shap_gain.sum()
             self.shapley_values[c_prty] = shap_val
         self.shapley_values = self.shapley_values.sort_values(ascending=False)
-        self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_value['value'] > 0]
+        self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_value['value'] > 0].reset_index()
 
     def get_possible_govt(self):
         return self.legal_coalitions
 
     def get_shapley(self):
         return self.shapley_values
+
+    def to_csv(self, path=None):
+
+        shap_path = os.path.join(path, 'Shapley.csv')
+        self.shapley_values.to_csv(shap_path, header=True)
+
+        possible_govt_path = os.path.join(path, 'possible options.csv')
+        self.legal_coalitions.to_csv(possible_govt_path)
 
 
 if __name__ == '__main__':
@@ -115,4 +124,4 @@ if __name__ == '__main__':
     shap.add_restrictions(disagree)
     shap.run()
 
-    possible = shap.get_possible_govt()
+    shap.to_csv(r'C:\school\PoliticalShapley')
