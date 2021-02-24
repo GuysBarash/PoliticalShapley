@@ -50,8 +50,9 @@ class PoliticalShapley:
         for c_prty, antiprtys in self.disagree.items():
             prty_idx = self.coalitions_validity[c_prty].eq(1)
             for antiprty in antiprtys:
-                antiprty_idx = self.coalitions_validity[antiprty].eq(1)
-                self.coalitions_validity.loc[prty_idx & antiprty_idx, 'invalid_count'] += 1
+                if antiprty in self.coalitions_validity:
+                    antiprty_idx = self.coalitions_validity[antiprty].eq(1)
+                    self.coalitions_validity.loc[prty_idx & antiprty_idx, 'invalid_count'] += 1
 
         self.coalitions_validity['valid'] = self.coalitions_validity['invalid_count'].eq(0)
 
@@ -80,7 +81,7 @@ class PoliticalShapley:
             shap_gain = (s_fac * comp_s_fac).astype(float) / float(n_fac) * gains
             shap_val = shap_gain.sum()
             self.shapley_values[c_prty] = shap_val
-        self.shapley_values = self.shapley_values.sort_values(ascending=False)
+        self.shapley_values = self.shapley_values.sort_values(ascending=False).fillna(0)
         self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_value['value'] > 0].reset_index(drop=True)
 
     def get_possible_govt(self):
@@ -114,7 +115,7 @@ if __name__ == '__main__':
     prty['kahol_lavan'] = 4
 
     disagree = dict()
-    disagree['likud'] = ['new_hope', 'kahol_lavan', 'israel_beitenu', 'yesh_atid', 'avoda']
+    disagree['likud'] = ['new_hope', 'kahol_lavan', 'israel_beitenu', 'yesh_atid', 'avoda', 'meretz']
     disagree['meshutefet'] = ['likud', 'tzionot_datit', 'yamina']
     disagree['yesh_atid'] = ['shas', 'yahadut_ha_tora']
 
@@ -124,4 +125,5 @@ if __name__ == '__main__':
     shap.add_restrictions(disagree)
     shap.run()
 
+    df = shap.shapley_values
     shap.to_csv(r'C:\school\PoliticalShapley')
