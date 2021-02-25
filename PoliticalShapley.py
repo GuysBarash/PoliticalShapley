@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+from IPython.display import display
 import itertools
 import os
 
@@ -25,6 +25,7 @@ class PoliticalShapley:
 
     def add_parties(self, parties):
         self.parties.update(parties)
+        self.parties = {k: v for k, v in self.parties.items() if v > 0}
 
     def add_restrictions(self, restrictions):
         self.disagree.update(restrictions)
@@ -110,7 +111,7 @@ if __name__ == '__main__':
     prty['yahadut_ha_tora'] = 7
     prty['israel_beitenu'] = 6
     prty['tzionot_datit'] = 5
-    # prty['meretz'] = 0
+    prty['meretz'] = 0
     prty['avoda'] = 7
     prty['kahol_lavan'] = 4
 
@@ -125,5 +126,12 @@ if __name__ == '__main__':
     shap.add_restrictions(disagree)
     shap.run()
 
+    df = shap.get_possible_govt()
+    if df.shape[0] > 0:
+        display(df)
+    else:
+        print("No possible coalition.")
+
     df = shap.shapley_values
+    print(df)
     shap.to_csv(r'C:\school\PoliticalShapley')
