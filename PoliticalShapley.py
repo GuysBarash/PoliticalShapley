@@ -49,11 +49,12 @@ class PoliticalShapley:
         # Check validity
         self.coalitions_validity['invalid_count'] = 0
         for c_prty, antiprtys in self.disagree.items():
-            prty_idx = self.coalitions_validity[c_prty].eq(1)
-            for antiprty in antiprtys:
-                if antiprty in self.coalitions_validity:
-                    antiprty_idx = self.coalitions_validity[antiprty].eq(1)
-                    self.coalitions_validity.loc[prty_idx & antiprty_idx, 'invalid_count'] += 1
+            if c_prty in self.coalitions_validity:
+                prty_idx = self.coalitions_validity[c_prty].eq(1)
+                for antiprty in antiprtys:
+                    if antiprty in self.coalitions_validity:
+                        antiprty_idx = self.coalitions_validity[antiprty].eq(1)
+                        self.coalitions_validity.loc[prty_idx & antiprty_idx, 'invalid_count'] += 1
 
         self.coalitions_validity['valid'] = self.coalitions_validity['invalid_count'].eq(0)
 
