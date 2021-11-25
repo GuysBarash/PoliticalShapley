@@ -3,6 +3,7 @@ import pandas as pd
 from IPython.display import display
 import itertools
 import os
+from tqdm import tqdm
 
 
 def powerset(iterable):
@@ -89,8 +90,11 @@ class PoliticalShapley:
     def get_possible_govt(self):
         return self.legal_coalitions
 
-    def get_shapley(self):
-        return self.shapley_values
+    def get_shapley(self, party=None):
+        if party is None:
+            return self.shapley_values
+        else:
+            return self.shapley_values.get(party, None)
 
     def to_csv(self, path=None):
 
@@ -99,6 +103,34 @@ class PoliticalShapley:
 
         possible_govt_path = os.path.join(path, 'possible options.csv')
         self.legal_coalitions.to_csv(possible_govt_path)
+
+
+def get_campagin_tactics(base, prty):
+    prts = [k for k in base.parties.keys() if k != prty]
+    restrictions = base.disagree
+
+    mx_mandates_to_steal = 4
+    sr = pd.DataFrame(columns=range(1, mx_mandates_to_steal + 1), index=prts)
+    for foe in tqdm(prts):
+        mx_mandates_to_steal_t = min(mx_mandates_to_steal, base.parties[foe])
+        for mndts_stolen in range(1, mx_mandates_to_steal_t + 1):
+            new_scores = base.parties.copy()
+            new_scores[foe] -= mndts_stolen
+            new_scores[prty] += mndts_stolen
+            new_scores_sr = pd.Series(new_scores)
+
+            shap_t = PoliticalShapley()
+            shap_t.add_parties(new_scores)
+            shap_t.add_restrictions(restrictions)
+            shap_t.run()
+            shaps = shap_t.get_shapley()
+            sr.loc[foe, mndts_stolen] = shap_t.get_shapley(prty)
+
+    for i in range(1, mx_mandates_to_steal + 1):
+        if sr[i].unique().shape[0] > 1:
+            sr = sr.sort_values(by=i, ascending=False)
+            break
+    display(sr)
 
 
 if __name__ == '__main__':
@@ -127,12 +159,17 @@ if __name__ == '__main__':
     shap.add_restrictions(disagree)
     shap.run()
 
-    df = shap.get_possible_govt()
-    if df.shape[0] > 0:
-        display(df)
-    else:
-        print("No possible coalition.")
+    prty = 'meshutefet'
+    prty_val = shap.get_shapley(prty)
+    print(f"{prty}: {prty_val}")
+    q = get_campagin_tactics(shap, prty)
 
-    df = shap.shapley_values
-    print(df)
-    shap.to_csv(r'C:\school\PoliticalShapley')
+    # df = shap.get_possible_govt()
+    # if df.shape[0] > 0:
+    #     display(df)
+    # else:
+    #     print("No possible coalition.")
+    #
+    # df = shap.shapley_values
+    # print(df)
+    # shap.to_csv(r'C:\school\PoliticalShapley')
