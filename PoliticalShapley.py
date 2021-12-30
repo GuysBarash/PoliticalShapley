@@ -141,7 +141,7 @@ class PoliticalShapley:
 
 def get_campagin_tactics(base, prty):
     prts = [k for k in base.parties.keys() if k != prty]
-    restrictions = base.disagree
+    restrictions = base.current_disagree
 
     mx_mandates_to_steal = 4
     sr = pd.DataFrame(columns=range(1, mx_mandates_to_steal + 1), index=prts)
@@ -172,7 +172,7 @@ def get_campagin_tactics(base, prty):
 
 def get_weak_spots(base, prty):
     prts = [k for k in base.parties.keys() if k != prty]
-    restrictions = base.disagree.copy()
+    restrictions = base.current_disagree.copy()
 
     mx_mandates_to_steal = 4
     mx_mandates_to_steal = min(mx_mandates_to_steal, base.parties[prty] - 1)
@@ -209,16 +209,16 @@ def which_rule_to_break(base, prty):
     scores = base.parties.copy()
     disagree = list()
 
-    for prty_t in base.disagree.keys():
+    for prty_t in base.current_disagree.keys():
         if prty_t == prty:
-            disagree += base.disagree[prty_t]
+            disagree += base.current_disagree[prty_t]
         else:
-            if prty in base.disagree[prty_t]:
+            if prty in base.current_disagree[prty_t]:
                 disagree += [prty_t]
 
     df = pd.DataFrame(index=disagree, columns=['Old Shap', 'New Shap', 'Shap gain', 'options with', 'options without'])
     for disagree_prty in tqdm(disagree, desc='Who is likely to join Likud'):
-        new_disagree = base.disagree.copy()
+        new_disagree = base.current_disagree.copy()
         if disagree_prty in new_disagree.get(prty, list()):
             new_l = [t for t in new_disagree[prty] if t != disagree_prty]
             new_disagree[prty] = new_l
@@ -249,7 +249,7 @@ def which_rule_to_break(base, prty):
 
 def who_has_interest_to_attack(base, prty):
     prts = [k for k in base.parties.keys() if k != prty]
-    restrictions = base.disagree.copy()
+    restrictions = base.current_disagree.copy()
     scores = base.parties.copy()
     original_shaps = base.get_shapley()
 
@@ -366,39 +366,39 @@ if __name__ == '__main__':
     df = shap.get_possible_govt()
     df.to_csv(os.path.join(path_root, 'Coalitions.csv'))
 
-    # print("-------------------------")
-    # print("-------------------------")
-    # prty = 'avoda'
-    # prty_val = shap.get_shapley(prty)
-    # print(f"{prty}: {prty_val}")
-    # print(f"---------------------")
-    # print(f'Mandates: {shap.parties[prty]}')
-    # print(f"Shap: {prty_val}")
-    # print(f"---------------------")
+    print("-------------------------")
+    print("-------------------------")
+    prty = 'avoda'
+    prty_val = shap.get_shapley(prty)
+    print(f"{prty}: {prty_val}")
+    print(f"---------------------")
+    print(f'Mandates: {shap.parties[prty]}')
+    print(f"Shap: {prty_val}")
+    print(f"---------------------")
 
-    # coals = shap.get_possible_govt()
-    # coals_with = 0
-    # coals_without = len(coals)
-    # if prty in coals.columns:
-    #     coals_with = len(coals[coals[prty] > 0])
-    #     coals_without = len(coals[coals[prty] <= 0])
-    # print(f'Coalitions with party: {coals_with}')
-    # print(f'Coalitions without party: {coals_without}')
-    # print("-------------------------")
+    coals = shap.get_possible_govt()
+    coals_with = 0
+    coals_without = len(coals)
+    if prty in coals.columns:
+        coals_with = len(coals[coals[prty] > 0])
+        coals_without = len(coals[coals[prty] <= 0])
+    print(f'Coalitions with party: {coals_with}')
+    print(f'Coalitions without party: {coals_without}')
+    print("-------------------------")
 
-    # offense = get_campagin_tactics(shap, prty)
-    # time.sleep(0.2)
-    # print("Value of attack:")
-    # display(offense)
+    offense = get_campagin_tactics(shap, prty)
+    time.sleep(0.2)
+    print("Value of attack:")
+    display(offense)
 
     # print("\n")
-    # defence = get_weak_spots(shap, prty)
+    # defence = get_weak_spots(shap, current_prty)
     # time.sleep(0.2)
     # print("Value of defence:")
     # display(defence)
     #
     # print("\n")
-    # interest_to_attack = who_has_interest_to_attack(shap, prty)
+    # interest_to_attack = who_has_interest_to_attack(shap, current_prty)
     # time.sleep(0.2)
     # print("Likely to attack:")
     # display(interest_to_attack)
