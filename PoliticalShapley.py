@@ -40,6 +40,8 @@ class PoliticalShapley:
         self.disagree = dict()
 
         self.shapley_values = None
+        self.banzhf_values = None
+        self.power_index = None
         self.legal_coalitions = None
 
         self.root_path = os.path.join(os.path.dirname(__file__), 'Dump')
@@ -72,10 +74,9 @@ class PoliticalShapley:
         for c_prty, antiprtys in self.disagree.items():
             if c_prty in self.coalitions_validity:
                 prty_idx = self.coalitions_validity[c_prty].eq(1)
-                for antiprty in antiprtys:
-                    if antiprty in self.coalitions_validity:
-                        antiprty_idx = self.coalitions_validity[antiprty].eq(1)
-                        self.coalitions_validity.loc[prty_idx & antiprty_idx, 'invalid_count'] += 1
+                cvdf = self.coalitions_validity[prty_idx]
+                cvdf = cvdf[antiprtys]
+                self.coalitions_validity.loc[cvdf.index, 'invalid_count'] += cvdf[antiprtys].sum(axis=1)
 
         self.coalitions_validity['valid'] = self.coalitions_validity['invalid_count'].eq(0)
 
@@ -85,6 +86,7 @@ class PoliticalShapley:
 
         # Calculate shapley
         self.shapley_values = pd.Series(index=self.parties.keys())
+        self.banzhf_values = pd.Series(index=self.parties.keys())
         for c_prty in self.parties.keys():
             other_parties = [cp for cp in self.parties.keys() if cp != c_prty]
             withdf = self.coalitions_value[self.coalitions_value[c_prty].eq(1)]
@@ -94,6 +96,8 @@ class PoliticalShapley:
             reordered['gain'] = (reordered['value'] - reordered['value'].shift(-1)).fillna(0).astype(int).clip(0)
             reordered = reordered.loc[self.coalitions_value[c_prty].eq(1), [c for c in reordered.columns
                                                                             if c != 'value']]
+            n = len(self.parties)
+            bnzf_coef = 1.0 / (np.power(2, n - 1))  # 1/(2^(n-1))
             reordered['N'] = len(self.parties)
             reordered['S'] = reordered[other_parties].sum(axis=1)
 
@@ -101,10 +105,22 @@ class PoliticalShapley:
             s_fac = reordered['S'].apply(np.math.factorial)
             comp_s_fac = (reordered['N'] - reordered['S'] - 1).apply(np.math.factorial)
             gains = reordered['gain']
-            shap_gain = (s_fac * comp_s_fac).astype(float) / float(n_fac) * gains
+
+            shap_gain = ((s_fac * comp_s_fac).astype(float) / float(n_fac)) * gains
             shap_val = shap_gain.sum()
+
+            banzhf_gain = gains.sum()
+            banzhf_val = bnzf_coef * banzhf_gain
+
             self.shapley_values[c_prty] = shap_val
+            self.banzhf_values[c_prty] = banzhf_val
+
         self.shapley_values = self.shapley_values.sort_values(ascending=False).fillna(0)
+        self.banzhf_values = self.banzhf_values.sort_values(ascending=False).fillna(0)
+        self.power_index = pd.DataFrame(columns=['Shapley', 'Banzhf'], index=self.parties)
+        self.power_index['Shapley'] = self.shapley_values
+        self.power_index['Banzhf'] = self.banzhf_values
+        self.power_index = self.power_index.sort_values(by=['Shapley', 'Banzhf'], ascending=False)
         self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_value['value'] > 0].reset_index(drop=True)
 
     def get_mandates(self, prty=None):
@@ -130,10 +146,10 @@ class PoliticalShapley:
         if title is None:
             title = ''
         else:
-            title = f'{title}_'
+            title = f'{title} '
 
-        shap_path = os.path.join(path, f'{title}Shapley.csv')
-        self.shapley_values.to_csv(shap_path, header=True)
+        shap_path = os.path.join(path, f'{title}Power index.csv')
+        self.power_index.to_csv(shap_path, header=True)
 
         possible_govt_path = os.path.join(path, f'{title}possible options.csv')
         self.legal_coalitions.to_csv(possible_govt_path)
@@ -141,7 +157,7 @@ class PoliticalShapley:
 
 def get_campagin_tactics(base, prty):
     prts = [k for k in base.parties.keys() if k != prty]
-    restrictions = base.current_disagree
+    restrictions = base.govnt_disagree
 
     mx_mandates_to_steal = 4
     sr = pd.DataFrame(columns=range(1, mx_mandates_to_steal + 1), index=prts)
@@ -172,7 +188,7 @@ def get_campagin_tactics(base, prty):
 
 def get_weak_spots(base, prty):
     prts = [k for k in base.parties.keys() if k != prty]
-    restrictions = base.current_disagree.copy()
+    restrictions = base.govnt_disagree.copy()
 
     mx_mandates_to_steal = 4
     mx_mandates_to_steal = min(mx_mandates_to_steal, base.parties[prty] - 1)
@@ -209,16 +225,16 @@ def which_rule_to_break(base, prty):
     scores = base.parties.copy()
     disagree = list()
 
-    for prty_t in base.current_disagree.keys():
+    for prty_t in base.govnt_disagree.keys():
         if prty_t == prty:
-            disagree += base.current_disagree[prty_t]
+            disagree += base.govnt_disagree[prty_t]
         else:
-            if prty in base.current_disagree[prty_t]:
+            if prty in base.govnt_disagree[prty_t]:
                 disagree += [prty_t]
 
     df = pd.DataFrame(index=disagree, columns=['Old Shap', 'New Shap', 'Shap gain', 'options with', 'options without'])
     for disagree_prty in tqdm(disagree, desc='Who is likely to join Likud'):
-        new_disagree = base.current_disagree.copy()
+        new_disagree = base.govnt_disagree.copy()
         if disagree_prty in new_disagree.get(prty, list()):
             new_l = [t for t in new_disagree[prty] if t != disagree_prty]
             new_disagree[prty] = new_l
@@ -249,7 +265,7 @@ def which_rule_to_break(base, prty):
 
 def who_has_interest_to_attack(base, prty):
     prts = [k for k in base.parties.keys() if k != prty]
-    restrictions = base.current_disagree.copy()
+    restrictions = base.govnt_disagree.copy()
     scores = base.parties.copy()
     original_shaps = base.get_shapley()
 
@@ -289,7 +305,7 @@ def dict_to_latex_table(parties, dispute, print_parties=False, print_restriction
     ld = list(parties.items())
     ld.sort(key=lambda t: -t[1])
     ld = [(i + 1, t[0].replace('_', ' ').title(), t[1]) for i, t in enumerate(ld)]
-    parties_idx = {t[1]:t[0] for t in ld}
+    parties_idx = {t[1]: t[0] for t in ld}
 
     if print_parties:
         ld = list(parties.items())
@@ -392,13 +408,13 @@ if __name__ == '__main__':
     display(offense)
 
     # print("\n")
-    # defence = get_weak_spots(shap, current_prty)
+    # defence = get_weak_spots(shap, govnt_prty)
     # time.sleep(0.2)
     # print("Value of defence:")
     # display(defence)
     #
     # print("\n")
-    # interest_to_attack = who_has_interest_to_attack(shap, current_prty)
+    # interest_to_attack = who_has_interest_to_attack(shap, govnt_prty)
     # time.sleep(0.2)
     # print("Likely to attack:")
     # display(interest_to_attack)
