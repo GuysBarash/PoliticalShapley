@@ -38,7 +38,10 @@ def clear_folder(path, delete_if_exist=True):
 class UNcrawler:
     @staticmethod
     def get_driver():
-        driver = webdriver.Chrome(r"C:\school\PoliticalShapley\Knesset_crawler\chromedriver.exe")
+        driverpath = os.path.join(os.path.dirname(__file__), "chromedriver.exe")
+        if not os.path.exists(driverpath):
+            driverpath = r"C:\school\PoliticalShapley\Knesset_crawler\chromedriver.exe"
+        driver = webdriver.Chrome(driverpath)
         driver.wait = WebDriverWait(driver, 5)
         time.sleep(1)
         return driver
