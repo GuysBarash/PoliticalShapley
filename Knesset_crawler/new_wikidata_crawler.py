@@ -1,3 +1,4 @@
+import datetime
 import os
 import shutil
 import re
@@ -9,9 +10,64 @@ import requests
 from bs4 import BeautifulSoup
 from IPython.display import display, HTML
 
+import codecs
 from wikidata.client import Client
 
 from tqdm import tqdm
+
+
+def wikidata_sql(q=None, spin=5):
+    if q is None:
+        q = r'''
+    SELECT ?townLabel ?countryLabel ?country_population ?town ?country
+    WHERE
+    {
+      VALUES ?town_or_city {
+        wd:Q3957
+        wd:Q515
+      }
+      ?town   wdt:P31/wdt:P279* ?town_or_city.
+      ?country wdt:P31/wdt:P279* wd:Q3624078.
+      
+      
+      ?town  wdt:P17 ?country.
+      # ?country  wdt:P36 ?town. # Capital of
+      ?country wdt:P1082 ?country_population.
+      ?town wdt:P1082 ?city_population.
+               
+      FILTER( ?country_population >= "100000"^^xsd:integer )
+      FILTER( ?city_population >= "10000"^^xsd:integer )
+    
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+    }
+    ORDER BY DESC(?country_population)
+        '''
+
+    import requests
+
+    url = 'https://query.wikidata.org/sparql'
+    g_time = datetime.datetime.now()
+    for i in range(spin):
+        v = False
+        try:
+            l_time = datetime.datetime.now()
+            print(f"Attempt {i + 1} at query")
+            r = requests.get(url, params={'format': 'json', 'query': q})
+            data = r.json()
+            v = True
+        except Exception as e:
+            nowtime = datetime.datetime.now()
+            print(f"Failed round {i + 1}\tGlobal time: {nowtime - g_time}\tRound time: {nowtime - l_time}")
+            time.sleep(0.5)
+        if v:
+            nowtime = datetime.datetime.now()
+            print(f"Success! round {i + 1}\tGlobal time: {nowtime - g_time}\tRound time: {nowtime - l_time}")
+            break
+
+    m = data['results']['bindings']
+    mdict = [{mtk: mtv['value'] for mtk, mtv in mt.items()} for mt in m]
+    pdf = pd.DataFrame(mdict)
+    return pdf
 
 
 class Wikidata:
@@ -369,15 +425,21 @@ class KnessetCrawler:
           SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
         } ORDER BY ?wd ?statement ?ps_
         '''.replace('@@@qid@@@', str(qid))
+        g_time = datetime.datetime.now()
         for i in range(spin):
+            l_time = datetime.datetime.now()
             v = False
             try:
                 r = requests.get(url, params={'format': 'json', 'query': query})
                 data = r.json()
                 v = True
             except Exception as e:
+                nowtime = datetime.datetime.now()
+                print(f"Failed round {i + 1}\tGlobal time: {nowtime - g_time}\tRound time: {nowtime - l_time}")
                 time.sleep(0.5)
             if v:
+                nowtime = datetime.datetime.now()
+                print(f"Success! round {i + 1}\tGlobal time: {nowtime - g_time}\tRound time: {nowtime - l_time}")
                 break
 
         m = data['results']['bindings']
@@ -385,6 +447,24 @@ class KnessetCrawler:
         psr = pd.Series(pdict)
         return psr
 
+    def fix_place_of_birth(self):
+        fname = 'cities.json'
+        pobdf = pd.read_json(codecs.open(fname, 'r', 'utf-8'))
+        pobdf = pobdf.set_index('name').sort_values(by=['country', 'name'])
+        l = self.mk_df['place of birth'].unique().tolist()
+        missed = list()
+        self.mk_df['Country of birth'] = np.nan
+        for cl in l:
+            try:
+                r = pobdf.loc[cl]
+                if type(r['country']) is str:
+                    self.mk_df.loc[self.mk_df['place of birth'].eq(cl), 'Country of birth'] = r['country']
+                else:
+                    print(f"Strange city: {cl}")
+            except KeyError as e:
+                print(f"Skipping: {cl}")
+                missed += [cl]
+        j = 3
 
 
 def query_wikidata(title, wikipage=None):
@@ -421,7 +501,54 @@ def query_wikidata(title, wikipage=None):
 
 
 if __name__ == '__main__':
+    q = '''SELECT ?townLabel ?countryLabel ?country_population ?town ?country
+WHERE
+{
+  VALUES ?town_or_city {
+    wd:Q3957
+    wd:Q515
+  }
+  ?town   wdt:P31/wdt:P279* ?town_or_city.
+  ?country wdt:P31/wdt:P279* wd:Q3624078.
+  
+  
+  ?town  wdt:P17 ?country.
+  ?country  wdt:P36 ?town. # Capital of
+  ?country wdt:P1082 ?country_population.
+  ?town wdt:P1082 ?city_population.
+           
+  FILTER( ?country_population >= "100000"^^xsd:integer )
+  FILTER( ?city_population >= "10000"^^xsd:integer )
+
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+ORDER BY DESC(?country_population)'''
+    wikidata_sql()
+
+if __name__ == '__main__':
     crawler = KnessetCrawler(False)
     crawler.fetch_knessets()
     crawler.extract_mks_from_all_knessets()
     crawler.extract_mks_from_wikidata()
+    crawler.fix_place_of_birth()
+
+    mk_df, knesset_df, mkpk_df = crawler.mk_df, crawler.knesset_df, crawler.knesset_sum_df
+
+    # Gender
+    gender = pd.Series(index=mk_df['Name'], data=mk_df['sex or gender'].values)
+    mkpk_df['Gender'] = mkpk_df['Member'].replace(gender)
+    mkpk_df['Female'] = mkpk_df['Gender'].eq('female').astype(int)
+    g = mkpk_df.groupby(by='Knesset_id')['Female'].mean()
+
+    # Longest serving
+    services = mkpk_df.groupby('Member')['Seats'].count().sort_values(ascending=False)
+    services = services[services > 7]
+
+    # Most parties
+    zigzag = mkpk_df.groupby('Member')['Party'].nunique().sort_values(ascending=False)
+    zigzag = zigzag[zigzag > 1]
+
+    # Knesset duration
+    klong = pd.Series(index=knesset_df['knesset_number'],
+                      data=(knesset_df['end_year'] - knesset_df['start_year']).values)
+    klong = klong.iloc[:-1]  # Last one is still running
