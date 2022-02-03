@@ -53,7 +53,7 @@ class PoliticalShapley:
     def add_restrictions(self, restrictions):
         self.disagree.update(restrictions)
 
-    def run(self):
+    def _run_max(self):
         binary_coalitions = np.array(list(map(list, itertools.product([0, 1], repeat=len(self.parties)))))
         self.coalitions = pd.DataFrame(index=range(binary_coalitions.shape[0]),
                                        columns=self.parties.keys(),
@@ -93,9 +93,15 @@ class PoliticalShapley:
             withoutdf = self.coalitions_value[self.coalitions_value[c_prty].eq(0)]
             reordered = pd.concat([withdf, withoutdf])
             reordered = reordered.sort_values(by=other_parties)
-            reordered['gain'] = (reordered['value'] - reordered['value'].shift(-1)).fillna(0).astype(int).clip(0)
+            reordered['value_shift'] = reordered['value'].shift(-1)
+            reordered['gain'] = (reordered['value'] - reordered['value_shift']).fillna(0).astype(int).clip(0)
             reordered = reordered.loc[self.coalitions_value[c_prty].eq(1), [c for c in reordered.columns
-                                                                            if c != 'value']]
+                                                                            if c != 'qvalue']]
+
+            # if c_prty == 'Likud':
+            #     t = reordered[reordered['gain'] > 0]
+            #     td = reordered[(reordered['value_shift'] < 50) & (reordered['value'] > 50)]
+            #     print(f"[MAX RUN][{c_prty}]\t Sum gain {reordered['gain'].sum()}")
             n = len(self.parties)
             bnzf_coef = 1.0 / (np.power(2, n - 1))  # 1/(2^(n-1))
             reordered['N'] = len(self.parties)
@@ -122,6 +128,113 @@ class PoliticalShapley:
         self.power_index['Banzhf'] = self.banzhf_values
         self.power_index = self.power_index.sort_values(by=['Shapley', 'Banzhf'], ascending=False)
         self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_value['value'] > 0].reset_index(drop=True)
+
+    def _run_super_additive(self):
+        binary_coalitions = np.array(list(map(list, itertools.product([0, 1], repeat=len(self.parties)))))
+        self.coalitions = pd.DataFrame(index=range(binary_coalitions.shape[0]),
+                                       columns=self.parties.keys(),
+                                       data=binary_coalitions,
+                                       )
+
+        self.coalitions_mandats = self.coalitions.copy()
+        self.coalitions_validity = self.coalitions.copy()
+        self.coalitions_value = self.coalitions.copy()
+
+        # Sum of each coalition
+        for party, mandats in self.parties.items():
+            self.coalitions_mandats[party] *= mandats
+        self.coalitions_mandats['Total'] = self.coalitions_mandats.sum(axis=1)
+
+        # Check validity
+        self.coalitions_validity['invalid_count'] = 0
+        for c_prty, antiprtys in self.disagree.items():
+            if c_prty in self.coalitions_validity:
+                prty_idx = self.coalitions_validity[c_prty].eq(1)
+                cvdf = self.coalitions_validity[prty_idx]
+                cvdf = cvdf[antiprtys]
+                self.coalitions_validity.loc[cvdf.index, 'invalid_count'] += cvdf[antiprtys].sum(axis=1)
+
+        self.coalitions_validity['valid'] = self.coalitions_validity['invalid_count'].eq(0)
+
+        self.coalitions_value['value'] = 0
+        good_coalitions = self.coalitions_validity['valid'] & (self.coalitions_mandats['Total'] > 60)
+        good_coalitionsdf = self.coalitions_validity[good_coalitions]
+        self.coalitions_value.loc[good_coalitions, 'value'] = 100
+
+        # Memorize all coalitions value using super additivity
+        section_memorize = True
+        if section_memorize:
+            # That means that the value of each coalition is it's best value of any subcoalition
+            sig_sr = pd.DataFrame(index=self.coalitions_value.index)
+            sig_sr['seats'] = self.coalitions_mandats['Total']
+            sig_sr['value'] = 0
+            sig_sr.loc[good_coalitions, 'value'] = 1
+            sig_sr['supervalue'] = -1
+            sig_sr.loc[sig_sr['seats'] < 61, 'supervalue'] = 0
+
+            gooddf = sig_sr.loc[good_coalitions]
+            for goodidx in tqdm(gooddf.index.to_list(), desc='Supergroups'):
+                gsr = self.coalitions.loc[goodidx]
+                good_cols = gsr[gsr > 0].index.to_list()
+                c_size = len(good_cols)
+
+                supergroups = self.coalitions[good_cols].sum(axis=1) == c_size
+                sig_sr.loc[supergroups, 'supervalue'] = 1
+            sig_sr.loc[sig_sr['supervalue'] == -1, 'supervalue'] = 0
+            good_coalitions = sig_sr['supervalue'] > 0
+            self.coalitions_value.loc[good_coalitions, 'value'] = 100
+
+        # Calculate shapley
+        self.shapley_values = pd.Series(index=self.parties.keys())
+        self.banzhf_values = pd.Series(index=self.parties.keys())
+        for c_prty in self.parties.keys():
+            other_parties = [cp for cp in self.parties.keys() if cp != c_prty]
+            withdf = self.coalitions_value[self.coalitions_value[c_prty].eq(1)]
+            withoutdf = self.coalitions_value[self.coalitions_value[c_prty].eq(0)]
+            reordered = pd.concat([withdf, withoutdf])
+            reordered = reordered.sort_values(by=other_parties)
+            reordered['value_shift'] = reordered['value'].shift(-1)
+            reordered['gain'] = (reordered['value'] - reordered['value_shift'])
+            reordered = reordered.loc[self.coalitions_value[c_prty].eq(1), [c for c in reordered.columns
+                                                                            if c != 'qvalue']]
+
+            # if c_prty == 'Likud':
+            #     t = reordered[reordered['gain'] > 0]
+            #     td = reordered[(reordered['value_shift'] < 50) & (reordered['value'] > 50)]
+            #     print(f"[SUPER RUN][{c_prty}]\t Sum gain {reordered['gain'].sum()}")
+
+            n = len(self.parties)
+            bnzf_coef = 1.0 / (np.power(2, n - 1))  # 1/(2^(n-1))
+            reordered['N'] = len(self.parties)
+            reordered['S'] = reordered[other_parties].sum(axis=1)
+
+            n_fac = np.math.factorial(len(self.parties))
+            s_fac = reordered['S'].apply(np.math.factorial)
+            comp_s_fac = (reordered['N'] - reordered['S'] - 1).apply(np.math.factorial)
+            gains = reordered['gain']
+
+            shap_gain = ((s_fac * comp_s_fac).astype(float) / float(n_fac)) * gains
+            shap_val = shap_gain.sum()
+
+            banzhf_gain = gains.sum()
+            banzhf_val = bnzf_coef * banzhf_gain
+
+            self.shapley_values[c_prty] = shap_val
+            self.banzhf_values[c_prty] = banzhf_val
+
+        self.shapley_values = self.shapley_values.sort_values(ascending=False).fillna(0)
+        self.banzhf_values = self.banzhf_values.sort_values(ascending=False).fillna(0)
+        self.power_index = pd.DataFrame(columns=['Shapley', 'Banzhf'], index=self.parties)
+        self.power_index['Shapley'] = self.shapley_values
+        self.power_index['Banzhf'] = self.banzhf_values
+        self.power_index = self.power_index.sort_values(by=['Shapley', 'Banzhf'], ascending=False)
+        self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_validity['valid'] & (self.coalitions_mandats['Total'] > 60)].reset_index(drop=True)
+
+    def run(self, sum_function='Super Additive'):
+        if sum_function == 'max':
+            self._run_max()
+        else:
+            self._run_super_additive()
 
     def get_mandates(self, prty=None):
         if prty is not None:
