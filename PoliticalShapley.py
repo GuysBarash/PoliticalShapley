@@ -1,3 +1,4 @@
+import copy
 import time
 
 import numpy as np
@@ -54,6 +55,12 @@ class PoliticalShapley:
         self.disagree.update(restrictions)
 
     def _run_max(self):
+        disagree = copy.deepcopy(self.disagree)
+        for k in self.disagree.keys():
+            vl = disagree[k]
+            for v in vl:
+                disagree[v] = list(set(disagree.get(v, list()) + [k]))
+
         binary_coalitions = np.array(list(map(list, itertools.product([0, 1], repeat=len(self.parties)))))
         self.coalitions = pd.DataFrame(index=range(binary_coalitions.shape[0]),
                                        columns=self.parties.keys(),
@@ -81,27 +88,32 @@ class PoliticalShapley:
         self.coalitions_validity['valid'] = self.coalitions_validity['invalid_count'].eq(0)
 
         self.coalitions_value['value'] = 0
-        good_coalitions = self.coalitions_validity['valid'] & (self.coalitions_mandats['Total'] > 60)
+        good_coalitions = (self.coalitions_mandats['Total'] > 60)  # &  self.coalitions_validity['valid']
         self.coalitions_value.loc[good_coalitions, 'value'] = 100
 
         # Calculate shapley
         self.shapley_values = pd.Series(index=self.parties.keys())
         self.banzhf_values = pd.Series(index=self.parties.keys())
         for c_prty in self.parties.keys():
+            curr_disagree = disagree.get(c_prty, list())
             other_parties = [cp for cp in self.parties.keys() if cp != c_prty]
             withdf = self.coalitions_value[self.coalitions_value[c_prty].eq(1)]
             withoutdf = self.coalitions_value[self.coalitions_value[c_prty].eq(0)]
             reordered = pd.concat([withdf, withoutdf])
             reordered = reordered.sort_values(by=other_parties)
-            reordered['value_shift'] = reordered['value'].shift(-1)
-            reordered['gain'] = (reordered['value'] - reordered['value_shift']).fillna(0).astype(int).clip(0)
+            reordered['value_shift'] = reordered['value'].shift(-1).fillna(0)
+
+            reordered['gain'] = (reordered['value'] - reordered['value_shift']).fillna(0)
+            if len(curr_disagree) > 0:
+                reordered.loc[reordered[curr_disagree].sum(axis=1) > 0, 'gain'] = 0
+
             reordered = reordered.loc[self.coalitions_value[c_prty].eq(1), [c for c in reordered.columns
                                                                             if c != 'qvalue']]
 
-            # if c_prty == 'Likud':
-            #     t = reordered[reordered['gain'] > 0]
-            #     td = reordered[(reordered['value_shift'] < 50) & (reordered['value'] > 50)]
-            #     print(f"[MAX RUN][{c_prty}]\t Sum gain {reordered['gain'].sum()}")
+            if c_prty == 'A':
+                t = reordered[reordered['gain'] > 0]
+                td = reordered[(reordered['value_shift'] < 50) & (reordered['value'] > 50)]
+                print(f"[MAX RUN][{c_prty}]\t Sum gain {reordered['gain'].sum()}")
             n = len(self.parties)
             bnzf_coef = 1.0 / (np.power(2, n - 1))  # 1/(2^(n-1))
             reordered['N'] = len(self.parties)
@@ -198,10 +210,10 @@ class PoliticalShapley:
             reordered = reordered.loc[self.coalitions_value[c_prty].eq(1), [c for c in reordered.columns
                                                                             if c != 'qvalue']]
 
-            # if c_prty == 'Likud':
-            #     t = reordered[reordered['gain'] > 0]
-            #     td = reordered[(reordered['value_shift'] < 50) & (reordered['value'] > 50)]
-            #     print(f"[SUPER RUN][{c_prty}]\t Sum gain {reordered['gain'].sum()}")
+            if c_prty == 'A':
+                t = reordered[reordered['gain'] > 0]
+                td = reordered[(reordered['value_shift'] < 50) & (reordered['value'] > 50)]
+                print(f"[SUPER RUN][{c_prty}]\t Sum gain {reordered['gain'].sum()}")
 
             n = len(self.parties)
             bnzf_coef = 1.0 / (np.power(2, n - 1))  # 1/(2^(n-1))
@@ -228,7 +240,8 @@ class PoliticalShapley:
         self.power_index['Shapley'] = self.shapley_values
         self.power_index['Banzhf'] = self.banzhf_values
         self.power_index = self.power_index.sort_values(by=['Shapley', 'Banzhf'], ascending=False)
-        self.legal_coalitions = self.coalitions_mandats.loc[self.coalitions_validity['valid'] & (self.coalitions_mandats['Total'] > 60)].reset_index(drop=True)
+        self.legal_coalitions = self.coalitions_mandats.loc[
+            self.coalitions_validity['valid'] & (self.coalitions_mandats['Total'] > 60)].reset_index(drop=True)
 
     def run(self, sum_function='Super Additive'):
         if sum_function == 'max':

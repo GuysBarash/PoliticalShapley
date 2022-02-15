@@ -184,6 +184,26 @@ if __name__ == '__main__':
         govnt_disagree = dict()
         govnt_disagree['X'] = ['B']
 
+        # govnt_prty = dict()
+        # govnt_prty['likud'] = 30
+        # govnt_prty['new_hope'] = 6
+        # govnt_prty['yamina'] = 7
+        # govnt_prty['yesh_atid'] = 17
+        # govnt_prty['meshutefet'] = 6
+        # govnt_prty['shas'] = 9
+        # govnt_prty['yahadut_ha_tora'] = 7
+        # govnt_prty['israel_beitenu'] = 7
+        # govnt_prty['tzionot_datit'] = 6
+        # govnt_prty['meretz'] = 6
+        # govnt_prty['avoda'] = 7
+        # govnt_prty['kahol_lavan'] = 8
+        # govnt_prty['raam'] = 4
+        #
+        # govnt_disagree = dict()
+        # govnt_disagree['likud'] = ['new_hope', 'kahol_lavan', 'israel_beitenu', 'yesh_atid', 'avoda', 'meretz']
+        # govnt_disagree['meshutefet'] = ['likud', 'tzionot_datit']
+        # govnt_disagree['yesh_atid'] = ['shas', 'yahadut_ha_tora']
+
         impossible_campaigns = list()
         impossible_moves = list()
 

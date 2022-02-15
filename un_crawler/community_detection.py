@@ -12,6 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 from IPython.display import display, HTML
 import matplotlib.pyplot as plt
+import queue
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options, DesiredCapabilities
@@ -25,6 +26,10 @@ from multiprocessing.pool import ThreadPool
 
 import networkx as nx
 import plotly.figure_factory as ff
+
+# Communities
+from networkx.algorithms import community
+import itertools
 
 
 def clear_folder(path, delete_if_exist=True):
@@ -500,86 +505,20 @@ class UNcrawler:
 
 if __name__ == '__main__':
 
-    section_crawler = False
-    if section_crawler:
-        crawler = UNcrawler()
-        crawler.search_records()
-        crawler.scrap_all_resolutions(True)
-        crawler.investigate_jsons(True)
-        crawler.finalize()
-
-    section_israel = False
-    if section_israel:
-        # Loading the dataset and viewing first few rows
-        undf = pd.read_csv(r"C:\school\PoliticalShapley\un_crawler\data\UN DATA.csv", low_memory=False)
-        undf.insert(2, 'YEAR', undf['Date'].str.extract(r'([0-9]{4})').astype(int))
-        # isr_idx = undf['Title'].str.contains('isr', case=False) | undf['Title'].str.contains('pales', case=False)
-        isr_idx = undf['Title'].str.contains('(?i)isr|palest|golan|gaza|jerus|middle east', case=False)
-        undf.insert(1, 'About Israel', isr_idx)
-
-        metadata = undf.columns[:13]
-        nations = [c for c in undf.columns if c not in metadata]
-
-        ca_ga = undf.groupby('YEAR')['About Israel'].value_counts(True)[:, True]
-
-        scdf = undf[undf['Council'].eq('Security Council')]
-        gadf = undf[~undf['Council'].eq('Security Council')]
-
-        # GA
-        df = gadf[gadf['YEAR'] > 2000]
-        df = df[df['About Israel']]
-        df = df[nations].T
-        xdf = pd.DataFrame(index=df.index, columns=['YES', 'NO', 'ABS', 'NON_VOTE', 'TOTAL'])
-        xdf['YES'] = df.eq('Y').sum(axis=1)
-        xdf['NO'] = df.eq('N').sum(axis=1)
-        xdf['ABS'] = df.eq('A').sum(axis=1)
-        xdf['NON_VOTE'] = df.eq('X').sum(axis=1)
-        xdf['TOTAL'] = xdf.sum(axis=1).astype(int)
-        xdf = xdf[xdf['TOTAL'] > 50]
-
-        xdf['YES_RATIO'] = xdf['YES'] / xdf['TOTAL']
-        xdf['NO_RATIO'] = xdf['NO'] / xdf['TOTAL']
-        xdf['ABS_RATIO'] = xdf['ABS'] / xdf['TOTAL']
-        xdf['NON_VOTE'] = xdf['NON_VOTE'] / xdf['TOTAL']
-
-        check = ['YES_RATIO', 'NO_RATIO', 'ABS_RATIO']
-        titles = {'YES_RATIO': 'Top @ Hostile', 'NO_RATIO': 'Top @ friendly', 'ABS_RATIO': 'Top @ abstaining'}
-        top_n = 5
-
-        perrow = top_n
-        rows = len(check)
-        fig1, axs = plt.subplots(rows, perrow, figsize=(25, 15))
-        for i in range(perrow * rows):
-            yi, xi = divmod(i, perrow)
-            ax = axs[yi, xi]
-
-            to_check = check[yi]
-            txdf = xdf.sort_values(by=[to_check], ascending=False)
-            sr = txdf.iloc[xi]
-
-            labels = ['YES', 'NO', 'ABS', 'NON_VOTE']
-            values = [sr[t] for t in labels]
-
-
-            def my_autopct(pct):
-                print(pct)
-                return ('%1.1f%%' % pct) if pct > 20.0 else ''
-
-
-            labels = [l if values[i] > 20.0 else '' for l, i in enumerate(labels)]
-
-            title = f'{titles.get(to_check).replace("@", f"{xi + 1}")}:   {sr.name}'
-            print(title)
-
-    section_communities = True
+    section_communities = False
     if section_communities:
-        undf = pd.read_csv(r"C:\school\PoliticalShapley\un_crawler\data\UN DATA.csv", low_memory=False)
+        gundf = pd.read_csv(r"C:\school\PoliticalShapley\un_crawler\data\UN DATA.csv", low_memory=False)
         vdf_path = os.path.join(r"C:\school\PoliticalShapley\un_crawler\data", 'similar votes.csv')
-        if os.path.exists(vdf_path):
-            vdf = pd.read_csv(vdf_path, index_col=0)
-        else:
-            undf.insert(2, 'YEAR', undf['Date'].str.extract(r'([0-9]{4})').astype(int))
-            undf = undf[undf['YEAR'] > 2010]
+        gundf.insert(2, 'YEAR', gundf['Date'].str.extract(r'([0-9]{4})').astype(int))
+
+        start_year = 1950
+        step = 3
+        window = 5
+        mx_year = gundf['YEAR'].max()
+        windows = [(s, s + window) for s in range(start_year, mx_year, step) if s + window <= mx_year]
+        for idx, (s_time, e_time) in enumerate(windows):
+            undf = gundf[gundf['YEAR'] >= s_time]
+            undf = undf[undf['YEAR'] < e_time]
             undf = undf[undf['Council'].eq('General Assembly')]
 
             metacols = undf.columns[:12].to_list()
@@ -587,7 +526,7 @@ if __name__ == '__main__':
 
             gadf = undf[statecols]
             vdf = pd.DataFrame(index=statecols, columns=statecols)
-            for from_state in tqdm(statecols):
+            for from_state in tqdm(statecols, desc=f'Building adjacency ({s_time}-->{e_time})'):
                 f_df = gadf[from_state].fillna('FNA')
                 t_df = gadf.fillna('TNA')
                 e = (t_df.T == f_df).sum(axis=1)
@@ -598,193 +537,251 @@ if __name__ == '__main__':
             empties = vdf.sum(axis=1) <= minimal_value
             states = empties[~empties].index.tolist()
             vdf = vdf.loc[states, states]
-            vdf.to_csv(vdf_path, encoding='utf-8-sig', index=True)
 
-        min_votes = 900
-        max_edges_per_state = 20
+            min_votes = 50
+            max_edges_per_state = 20
 
-        vdf = vdf[vdf.max(axis=1) > min_votes]
-        vdf = vdf[list(vdf.index)]
-        nvdf = vdf / vdf.max(axis=1)
-        G = nx.from_pandas_adjacency(nvdf, create_using=nx.DiGraph)
-        for c in nvdf.columns:
-            nvdf.loc[c, c] = 0
-            z = nvdf.sort_values(by=c, ascending=False)[c].iloc[max_edges_per_state:].index.to_list()
-            nvdf.loc[c, z] = 0
+            vdf = vdf[vdf.max(axis=1) > min_votes]
+            vdf = vdf[list(vdf.index)]
+            nvdf = vdf / vdf.max(axis=1)
+            G = nx.from_pandas_adjacency(nvdf, create_using=nx.DiGraph)
+            for c in nvdf.columns:
+                nvdf.loc[c, c] = 0
+                z = nvdf.sort_values(by=c, ascending=False)[c].iloc[max_edges_per_state:].index.to_list()
+                nvdf.loc[c, z] = 0
 
-        reduced_nvdf = nvdf.copy()
-        for c in reduced_nvdf.columns:
-            reduced_nvdf.loc[c, c] = 0
-            z = reduced_nvdf.sort_values(by=c, ascending=False)[c].iloc[15:].index.to_list()
-            reduced_nvdf.loc[c, z] = 0
-        G = nx.from_pandas_adjacency(reduced_nvdf, create_using=nx.DiGraph)
+            reduced_nvdf = nvdf.copy()
+            for c in reduced_nvdf.columns:
+                reduced_nvdf.loc[c, c] = 0
+                z = reduced_nvdf.sort_values(by=c, ascending=False)[c].iloc[15:].index.to_list()
+                reduced_nvdf.loc[c, z] = 0
+            G = nx.from_pandas_adjacency(reduced_nvdf, create_using=nx.DiGraph)
 
-        # Communities
-        from networkx.algorithms import community
-        import itertools
+            section_girvan_newman = True
+            if section_girvan_newman:
+                k = 1
+                print("Calculating")
+                set2key = lambda subset: ';'.join(sorted(list(subset)))
+                comp = community.girvan_newman(G)
+                communities_t = [t for t in tqdm((itertools.islice(comp, k, k + 20)), desc='Bulding communities')]
+                single_states = reduced_nvdf.index.to_list()
+                collective_group = set(single_states)
+                # building initial dict of node_id to each possible subset:
+                node_id = 0
+                init_node2community_dict = dict()  # {node_id: communities_t[0][0].union(communities_t[0][1])}
+                individual_community = [set([s]) for s in single_states]
+                communities = [tuple([collective_group])] + communities_t + [individual_community]
+                for comm in communities:
+                    for subset in list(comm):
+                        if subset not in init_node2community_dict.values():
+                            init_node2community_dict[node_id] = subset
+                            node_id += 1
 
-        section_girvan_newman = False
-        if section_girvan_newman:
-            k = 1
-            print("Calculating")
-            set2key = lambda subset: ';'.join(sorted(list(subset)))
-            comp = community.girvan_newman(G)
-            communities_t = [t for t in tqdm((itertools.islice(comp, k, k + 20)), desc='Bulding communities')]
-            single_states = reduced_nvdf.index.to_list()
-            collective_group = set(single_states)
-            # building initial dict of node_id to each possible subset:
-            node_id = 0
-            init_node2community_dict = dict()  # {node_id: communities_t[0][0].union(communities_t[0][1])}
-            individual_community = [set([s]) for s in single_states]
-            communities = [tuple([collective_group])] + communities_t + [individual_community]
-            for comm in communities:
-                for subset in list(comm):
-                    if subset not in init_node2community_dict.values():
-                        init_node2community_dict[node_id] = subset
-                        node_id += 1
+                idx2community = {set2key(v): k for k, v in init_node2community_dict.items()}
+                # turning this dictionary to the desired format in @mdml's answer
+                node_id_to_children = {e: [] for e in init_node2community_dict.keys()}
+                for comm_level_idx in range(len(communities) - 1):
+                    comm_level_parent = communities[comm_level_idx]
+                    comm_level_child = communities[comm_level_idx + 1]
+                    for parent in comm_level_parent:
+                        parent_idx = idx2community[set2key(parent)]
+                        for child in comm_level_child:
+                            intersection_size = len(child.intersection(parent))
+                            if intersection_size == 0:
+                                pass
+                            else:
+                                child_idx = idx2community[set2key(child)]
+                                if child_idx != parent_idx:
+                                    node_id_to_children[parent_idx] = node_id_to_children[parent_idx] + [child_idx]
 
-            idx2community = {set2key(v): k for k, v in init_node2community_dict.items()}
-            # turning this dictionary to the desired format in @mdml's answer
-            node_id_to_children = {e: [] for e in init_node2community_dict.keys()}
-            for comm_level_idx in range(len(communities) - 1):
-                comm_level_parent = communities[comm_level_idx]
-                comm_level_child = communities[comm_level_idx + 1]
-                for parent in comm_level_parent:
-                    parent_idx = idx2community[set2key(parent)]
-                    for child in comm_level_child:
-                        intersection_size = len(child.intersection(parent))
-                        if intersection_size == 0:
-                            pass
-                        else:
-                            child_idx = idx2community[set2key(child)]
-                            if child_idx != parent_idx:
-                                node_id_to_children[parent_idx] = node_id_to_children[parent_idx] + [child_idx]
-
-            # also recording node_labels dict for the correct label for dendrogram leaves
-            node_labels = dict()
-            for node_id, group in init_node2community_dict.items():
-                if len(group) == 1:
-                    node_labels[node_id] = list(group)[0]
-                else:
-                    node_labels[node_id] = ''
-
-            section_dendogram = False
-            if section_dendogram:
-                # also needing a subset to rank dict to later know within all k-length merges which came first
-                subset_rank_dict = dict()
-                rank = 0
-                for e in communities[::-1]:
-                    for p in list(e):
-                        if tuple(p) not in subset_rank_dict:
-                            subset_rank_dict[tuple(sorted(p))] = rank
-                            rank += 1
-                subset_rank_dict[tuple(sorted(itertools.chain.from_iterable(communities[-1])))] = rank
-
-
-                # my function to get a merge height so that it is unique (probably not that efficient)
-                def get_merge_height(sub):
-                    sub_tuple = tuple(sorted([node_labels[i] for i in sub]))
-                    n = len(sub_tuple)
-                    other_same_len_merges = {k: v for k, v in subset_rank_dict.items() if len(k) == n}
-                    if len(other_same_len_merges) == 0:
-                        range = 1
-                        min_rank, max_rank = 1, 1
+                # also recording node_labels dict for the correct label for dendrogram leaves
+                node_labels = dict()
+                for node_id, group in init_node2community_dict.items():
+                    if len(group) == 1:
+                        node_labels[node_id] = list(group)[0]
                     else:
-                        min_rank, max_rank = min(other_same_len_merges.values()), max(other_same_len_merges.values())
-                        range = (max_rank - min_rank) if max_rank > min_rank else 1
-                    return float(len(sub)) + 0.8 * (subset_rank_dict[sub_tuple] - min_rank) / range
+                        node_labels[node_id] = ''
+
+                section_dendogram = False
+                if section_dendogram:
+                    # also needing a subset to rank dict to later know within all k-length merges which came first
+                    subset_rank_dict = dict()
+                    rank = 0
+                    for e in communities[::-1]:
+                        for p in list(e):
+                            if tuple(p) not in subset_rank_dict:
+                                subset_rank_dict[tuple(sorted(p))] = rank
+                                rank += 1
+                    subset_rank_dict[tuple(sorted(itertools.chain.from_iterable(communities[-1])))] = rank
 
 
-                # finally using @mdml's magic, slightly modified:
-                Gt = nx.DiGraph(node_id_to_children)
-                nodes = Gt.nodes()
-                leaves = set(n for n in nodes if Gt.out_degree(n) == 0)
-                inner_nodes = [n for n in nodes if Gt.out_degree(n) > 0]
-
-                # Compute the size of each subtree
-                subtree = dict((n, [n]) for n in leaves)
-                for u in inner_nodes:
-                    children = set()
-                    node_list = list(node_id_to_children[u])
-                    while len(node_list) > 0:
-                        v = node_list.pop(0)
-                        children.add(v)
-                        node_list += node_id_to_children[v]
-                    subtree[u] = sorted(children & leaves)
-
-                inner_nodes.sort(
-                    key=lambda n: len(subtree[n]))  # <-- order inner nodes ascending by subtree size, root is last
-
-                # Construct the linkage matrix
-                leaves = sorted(leaves)
-                index = dict((tuple([n]), i) for i, n in enumerate(leaves))
-                Z = []
-                k = len(leaves)
-                for i, n in enumerate(inner_nodes):
-                    children = node_id_to_children[n]
-                    x = children[0]
-                    for y in children[1:]:
-                        z = tuple(sorted(subtree[x] + subtree[y]))
-                        i, j = index[tuple(sorted(subtree[x]))], index[tuple(sorted(subtree[y]))]
-
-                        subtree_n = subtree[n]
-                        merge_height = get_merge_height(subtree_n)
-                        zval = [i, j, merge_height, len(z)]
-                        Z.append(zval)  # <-- float is required by the dendrogram function
-                        index[z] = k
-                        subtree[z] = list(z)
-                        x = z
-                        k += 1
-
-                # dendrogram
-                from scipy.cluster.hierarchy import dendrogram
-
-                fig1, ax1 = plt.subplots(1, figsize=(15, 35))
-                labels = [node_labels[node_id] for node_id in leaves]
-                dendrogram(Z, orientation='right', labels=labels, ax=ax1)
-                plt.savefig('dendrogram.png')
-                plt.close()
-
-            section_top_alliences = True
-            top_a = 10
-
-            idx = 5
-            for tidx, allies in enumerate(communities):
-                r = [len(a) for a in allies if len(a) > 1]
-                partitions = len(r)
-                if partitions >= top_a:
-                    idx = tidx
-                    break
-
-            allies = communities[idx]
-            allies = sorted(allies, key=lambda s: -len(s))[:top_a]
-            random.shuffle(allies)
-
-            alliesdf = pd.DataFrame(index=[f'Member {i + 1}' for i in range(max([len(a) for a in allies]))],
-                                    columns=[f'Alliance {i + 1}' for i in range(len(allies))],
-                                    data=''
-                                    )
-            for i, a in enumerate(allies):
-                at = list(a) + ([''] * (alliesdf.shape[0] - len(a)))
-                alliesdf[f'Alliance {i + 1}'] = at
-
-        section_asyn_lpa = True
-        if section_asyn_lpa:
-            allies = list(community.asyn_lpa_communities(G, 'weight'))
+                    # my function to get a merge height so that it is unique (probably not that efficient)
+                    def get_merge_height(sub):
+                        sub_tuple = tuple(sorted([node_labels[i] for i in sub]))
+                        n = len(sub_tuple)
+                        other_same_len_merges = {k: v for k, v in subset_rank_dict.items() if len(k) == n}
+                        if len(other_same_len_merges) == 0:
+                            range = 1
+                            min_rank, max_rank = 1, 1
+                        else:
+                            min_rank, max_rank = min(other_same_len_merges.values()), max(
+                                other_same_len_merges.values())
+                            range = (max_rank - min_rank) if max_rank > min_rank else 1
+                        return float(len(sub)) + 0.8 * (subset_rank_dict[sub_tuple] - min_rank) / range
 
 
-            def get_coalition(powers, state):
-                for coal in powers:
-                    c = [c.lower() for c in coal]
-                    if state.lower() in c:
-                        return coal
-                return None
+                    # finally using @mdml's magic, slightly modified:
+                    Gt = nx.DiGraph(node_id_to_children)
+                    nodes = Gt.nodes()
+                    leaves = set(n for n in nodes if Gt.out_degree(n) == 0)
+                    inner_nodes = [n for n in nodes if Gt.out_degree(n) > 0]
+
+                    # Compute the size of each subtree
+                    subtree = dict((n, [n]) for n in leaves)
+                    for u in inner_nodes:
+                        children = set()
+                        node_list = list(node_id_to_children[u])
+                        while len(node_list) > 0:
+                            v = node_list.pop(0)
+                            children.add(v)
+                            node_list += node_id_to_children[v]
+                        subtree[u] = sorted(children & leaves)
+
+                    inner_nodes.sort(
+                        key=lambda n: len(subtree[n]))  # <-- order inner nodes ascending by subtree size, root is last
+
+                    # Construct the linkage matrix
+                    leaves = sorted(leaves)
+                    index = dict((tuple([n]), i) for i, n in enumerate(leaves))
+                    Z = []
+                    k = len(leaves)
+                    for i, n in enumerate(inner_nodes):
+                        children = node_id_to_children[n]
+                        x = children[0]
+                        for y in children[1:]:
+                            z = tuple(sorted(subtree[x] + subtree[y]))
+                            i, j = index[tuple(sorted(subtree[x]))], index[tuple(sorted(subtree[y]))]
+
+                            subtree_n = subtree[n]
+                            merge_height = get_merge_height(subtree_n)
+                            zval = [i, j, merge_height, len(z)]
+                            Z.append(zval)  # <-- float is required by the dendrogram function
+                            index[z] = k
+                            subtree[z] = list(z)
+                            x = z
+                            k += 1
+
+                    # dendrogram
+                    from scipy.cluster.hierarchy import dendrogram
+
+                    fig1, ax1 = plt.subplots(1, figsize=(15, 35))
+                    labels = [node_labels[node_id] for node_id in leaves]
+                    dendrogram(Z, orientation='right', labels=labels, ax=ax1)
+                    plt.savefig('dendrogram.png')
+                    plt.close()
+
+                top_a = 10
+
+                idx = 5
+                for tidx, allies in enumerate(communities):
+                    r = [len(a) for a in allies if len(a) > 1]
+                    partitions = len(r)
+                    if partitions >= top_a:
+                        idx = tidx
+                        break
+
+                allies = communities[idx]
+                allies = sorted(allies, key=lambda s: -len(s))[:top_a]
+                random.shuffle(allies)
+
+                alliesdf = pd.DataFrame(index=[f'Member {i + 1}' for i in range(max([len(a) for a in allies]))],
+                                        columns=[f'Alliance {i + 1}' for i in range(len(allies))],
+                                        data=''
+                                        )
+                for i, a in enumerate(allies):
+                    at = list(a) + ([''] * (alliesdf.shape[0] - len(a)))
+                    alliesdf[f'Alliance {i + 1}'] = at
+
+                path = r"C:\school\PoliticalShapley\un_crawler\Allies"
+                clear_folder(path, False)
+                fpath = os.path.join(path, f'Allies GIRVAN {s_time} {e_time}.csv')
+                alliesdf.to_csv(fpath, encoding='utf-8-sig', index=False)
+
+            section_asyn_lpa = True
+            if section_asyn_lpa:
+                allies = list(community.asyn_lpa_communities(G, 'weight'))
+                if len(allies) == 0:
+                    print(f"Error for years: {s_time} {e_time}")
+                    continue
 
 
-            alliesdf = pd.DataFrame(index=[f'Member {i + 1}' for i in range(max([len(a) for a in allies]))],
-                                    columns=[f'Alliance {i + 1}' for i in range(len(allies))],
-                                    data=''
-                                    )
-            for i, a in enumerate(allies):
-                at = list(a) + ([''] * (alliesdf.shape[0] - len(a)))
-                alliesdf[f'Alliance {i + 1}'] = at
+                def get_coalition(powers, state):
+                    for coal in powers:
+                        c = [c.lower() for c in coal]
+                        if state.lower() in c:
+                            return coal
+                    return None
+
+
+                alliesdf = pd.DataFrame(index=[f'Member {i + 1}' for i in range(max([len(a) for a in allies]))],
+                                        columns=[f'Alliance {i + 1}' for i in range(len(allies))],
+                                        data=''
+                                        )
+                for i, a in enumerate(allies):
+                    at = list(a) + ([''] * (alliesdf.shape[0] - len(a)))
+                    alliesdf[f'Alliance {i + 1}'] = at
+
+                path = r"C:\school\PoliticalShapley\un_crawler\Allies"
+                clear_folder(path, False)
+                fpath = os.path.join(path, f'Allies ASYN {s_time} {e_time}.csv')
+                alliesdf.to_csv(fpath, encoding='utf-8-sig', index=False)
+
+    section_analyze_migration = True
+    if section_analyze_migration:
+        path = r"C:\school\PoliticalShapley\un_crawler\Allies"
+        g_paths = [os.path.join(path, t) for t in os.listdir(path) if 'GIRVAN' in t]
+        a_paths = [os.path.join(path, t) for t in os.listdir(path) if 'ASYN' in t]
+        dump_path = os.path.join(path, 'Over time')
+        clear_folder(dump_path, delete_if_exist=True)
+
+        visited = dict()
+        q = queue.Queue()
+        state = 'ISRAEL'
+        q.put(state)
+        visited[state] = True
+
+        while not q.empty():
+            state = q.get()
+            print(f'[q: {q.qsize():>5}]\t{state}')
+
+            for t_title, t_path in [('GIRVAN', g_paths), ('ASYN', a_paths)]:
+                idf = pd.DataFrame(index=range(100))
+                for gpath in a_paths:
+                    m = re.search(r'([0-9]{4}) ([0-9]{4})', gpath)
+                    s_time, e_time = int(m.group(1)), int(m.group(2))
+                    time_sig = f'{s_time}-{e_time}'
+                    # print(time_sig)
+                    adf = pd.read_csv(gpath)
+
+                    alliance = adf.eq(state).sum() > 0
+                    if alliance.sum() > 0:
+                        alliance_idx = alliance[alliance].index[0]
+                        alliance = adf[alliance_idx]
+                        alliance = alliance.sort_values().reset_index(drop=True)
+                    else:
+                        alliance = pd.Series(index=[0], data=[state])
+
+                    idf.loc[alliance.index, time_sig] = alliance
+                idf = idf[idf.isna().mean(axis=1) < 1]
+
+                method_dump_path = os.path.join(dump_path, t_title)
+                clear_folder(method_dump_path, delete_if_exist=False)
+                df_path = os.path.join(method_dump_path, f'{state}.csv')
+                idf.to_csv(df_path, encoding='utf-8-sig', index=False)
+
+                for s in pd.unique(idf.values.ravel('K')):
+                    if s in visited:
+                        continue
+                    else:
+                        q.put(s)
+                        visited[s] = True
