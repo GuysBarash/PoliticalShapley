@@ -11,29 +11,25 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.cluster.hierarchy import dendrogram
 from sklearn.cluster import AgglomerativeClustering
-import requests
-from bs4 import BeautifulSoup
-from IPython.display import display, HTML
 import matplotlib.pyplot as plt
 import queue
-
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options, DesiredCapabilities
-from selenium.webdriver.common.proxy import Proxy, ProxyType
-from selenium.webdriver.support.ui import WebDriverWait
 
 from tqdm import tqdm
 
 from multiprocessing import Pool
 from multiprocessing.pool import ThreadPool
-
-import networkx as nx
-import plotly.figure_factory as ff
-
-# Communities
-from networkx.algorithms import community
 import itertools
+
 from sklearn.metrics.pairwise import euclidean_distances
+
+
+def ballots_to_json(path_in, path_out):
+    with open(path_in, encoding="utf8") as fp:
+        r = fp.read()
+    r = r.split('\n')
+    d = {re.search(r'([^\s]+)\s(.*)', t).group(1): re.search(r'([^\s]+)\s(.*)', t).group(2) for t in r}
+    with open(path_out, 'w', encoding='utf-8') as file:
+        json.dump(d, file, ensure_ascii=False, indent=4)
 
 
 def clear_folder(path, delete_if_exist=True):
@@ -50,7 +46,7 @@ def clear_folder(path, delete_if_exist=True):
 
 
 class Voter:
-    def __init__(self, votesdf, meatavoters=10):
+    def __init__(self, votes_per_settelments_path, meatavoters=10, ballots_path=None):
         self.rootpath = os.path.dirname(__file__)
         self.outpath = os.path.join(self.rootpath, 'Results')
         self.datapath = os.path.join(self.rootpath, 'data')
@@ -60,9 +56,16 @@ class Voter:
         clear_folder(self.lms_path, delete_if_exist=False)
 
         self.meatavoters = meatavoters
-        self.rawdf = votesdf
+        df = pd.read_csv(votes_per_settelments_path, encoding='iso_8859_8')
+        self.rawdf = df
         self.rawdf = self.rawdf[~self.rawdf['שם ישוב'].eq("מעטפות חיצוניות")]
         self.rawdf['uid'] = self.rawdf['סמל ישוב'].astype(int)
+
+        self.ballots = None
+        if ballots_path is not None:
+            with open(ballots_path, encoding='utf-8') as json_file:
+                self.ballots = json.load(json_file)
+            self.rawdf = self.rawdf.rename(columns=self.ballots)
 
         self.metadata = list(set(df.columns[:7].to_list() + ['uid']))
         self.parties = [c for c in self.rawdf.columns if c not in self.metadata]
@@ -96,8 +99,6 @@ class Voter:
         self.voters = None
 
     def add_external_data(self):
-        print('<-------------------------->')
-        print(self.votesdf.shape[0])
         section_ethnicity = False
         if section_ethnicity:
             ethdf = pd.read_csv(os.path.join(self.lms_path, 'ethnicity.csv'), encoding='utf-8-sig')
@@ -188,12 +189,8 @@ class Voter:
                 df = self.votesdf[['Label', c]]
                 g = df.groupby('Label')
                 nullratio = g.agg({c: lambda x: x.isnull().mean()})
-                null_max = nullratio.max().values[0]
-                null_max_label = nullratio.idxmax().values[0]
-                if null_max < 0.7:
-                    self.voters[c] = g[c].mean()
-                else:
-                    print(f"Max [{c}] x [{null_max_label}] = {null_max}")
+                nullratio = nullratio[nullratio < 0.6].dropna()
+                self.voters.loc[nullratio.index.astype(int).to_list(), c] = g[c].mean()
 
         section_add_most_common = True
         if section_add_most_common:
@@ -204,14 +201,12 @@ class Voter:
                     continue
                 df = self.votesdf[['Label', c]]
                 g = df.groupby('Label')
+
                 nullratio = g.agg({c: lambda x: x.isnull().mean()})
-                null_max = nullratio.max().values[0]
-                null_max_label = nullratio.idxmax().values[0]
-                if null_max < 0.7:
-                    self.voters[c] = g[c].agg(lambda x: x.value_counts().index[0])
-                else:
-                    print(f"Max [{c}] x [{null_max_label}] = {null_max}")
-                    print("Skipping")
+                nullratio = nullratio[nullratio < 0.6].dropna()
+                self.voters.loc[nullratio.index.astype(int).to_list(), c] = g[c].agg(
+                    lambda x: x.value_counts().index[0])
+
         j = 3
 
     def cluster(self):
@@ -228,7 +223,7 @@ class Voter:
         scaled_X = X  # scaler.fit_transform(X)
         opt_k = 9
 
-        section_calculate_optimal_k = False
+        section_calculate_optimal_k = True
         if section_calculate_optimal_k:
             k_range = (3, 30)
             sse = pd.Series(index=range(k_range[0], k_range[1]))
@@ -241,7 +236,7 @@ class Voter:
                 silhouette[k] = silhouette_score(scaled_X, model.labels_)
 
             kl = KneeLocator(range(k_range[0], k_range[1]), sse, curve="convex", direction="decreasing")
-            opt_k = kl.elbow + 3
+            opt_k = kl.elbow + 1
 
             fig, axs = plt.subplots(2)
             fig.suptitle('Vertically stacked subplots')
@@ -276,12 +271,14 @@ class Voter:
         # voters[cols_to_norm] = np.round(voters[cols_to_norm], 1)
         voters[cols_to_norm] = np.round(voters[cols_to_norm], 3)
 
+        print('<-------------------------->')
         for cls in range(opt_k):
             xdf = self.votes_dist_df[self.votes_dist_df['Label'] == cls]
             t = xdf.iloc[:6].index.to_list()
             print(f'--- {cls} ---')
             for tq in t:
                 print(tq)
+        print('<-------------------------->')
 
         nonempties = voters.max() > 0
         nonempties = nonempties[nonempties]
@@ -292,7 +289,9 @@ class Voter:
         self.votesdf.loc[:, self.metadata] = self.rawdf.loc[self.votesdf.index, self.metadata]
 
         self.voters = voters
+        self.voters['Towns count'] = self.votesdf.groupby('Label')['uid'].count()
         self.add_external_data()
+        j = 3
 
     def vote_sampling(self, n=50):
         if type(n) is not tuple:
@@ -344,9 +343,10 @@ if __name__ == '__main__':
     root_path = os.path.dirname(__file__)
     data_path = os.path.join(root_path, 'data')
 
-    df = pd.read_csv(data_path + '\\' + 'votes per settlement 2020.csv', encoding='iso_8859_8')
+    votes_csv_path = data_path + '\\' + 'votes per settlement 2021.csv'
+    ballots_path = r"C:\school\PoliticalShapley\pull election underline distribution\data\votes per settlement 2021 ballots.json"
 
-    voter = Voter(df)
+    voter = Voter(votes_csv_path, ballots_path=ballots_path)
     voter.cluster()
     voter.export()
     print("END OF CODE.")
