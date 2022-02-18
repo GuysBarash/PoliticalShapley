@@ -1,0 +1,1 @@
+from statistics.voter_distribution import Voter

@@ -46,7 +46,7 @@ def clear_folder(path, delete_if_exist=True):
 
 
 class Voter:
-    def __init__(self, votes_per_settelments_path, meatavoters=10, ballots_path=None):
+    def __init__(self):
         self.rootpath = os.path.dirname(__file__)
         self.outpath = os.path.join(self.rootpath, 'Results')
         self.datapath = os.path.join(self.rootpath, 'data')
@@ -55,11 +55,23 @@ class Voter:
         clear_folder(self.rootpath, delete_if_exist=False)
         clear_folder(self.lms_path, delete_if_exist=False)
 
-        self.meatavoters = meatavoters
+        self.rawdf = None
+        self.ballots = None
+        self.metadata = None
+        self.parties = None
+        self.voters = None
+        self.town_clusters = None
+        self.votesdf = None
+        self.votes_dist_df = None
+        self.non_empy_parties = None
+        self.distances = None
+        self.k = None
+
+    def initialize(self, votes_per_settelments_path, ballots_path=None):
         df = pd.read_csv(votes_per_settelments_path, encoding='iso_8859_8')
-        self.rawdf = df
+        self.rawdf = df.copy()
         self.rawdf = self.rawdf[~self.rawdf['שם ישוב'].eq("מעטפות חיצוניות")]
-        self.rawdf['uid'] = self.rawdf['סמל ישוב'].astype(int)
+        self.rawdf.loc[:, 'uid'] = self.rawdf.loc[:, 'סמל ישוב'].astype(int).values
 
         self.ballots = None
         if ballots_path is not None:
@@ -92,11 +104,6 @@ class Voter:
         d = self.votes_dist_df[[c for c in self.votes_dist_df if c in self.parties]].to_numpy()
         dist = euclidean_distances(d, d)
         self.distances = pd.DataFrame(index=names, columns=names, data=dist)
-
-        self.final_cout = self.votesdf[self.parties].sum().sort_values(ascending=False)
-        self.norm_count = self.final_cout / self.final_cout.sum()
-
-        self.voters = None
 
     def add_external_data(self):
         section_ethnicity = False
@@ -223,7 +230,7 @@ class Voter:
         scaled_X = X  # scaler.fit_transform(X)
         opt_k = 9
 
-        section_calculate_optimal_k = True
+        section_calculate_optimal_k = False
         if section_calculate_optimal_k:
             k_range = (3, 30)
             sse = pd.Series(index=range(k_range[0], k_range[1]))
@@ -255,6 +262,7 @@ class Voter:
             plt.savefig(figpath)
 
         print(f'Types of voters: {opt_k}')
+        self.k = opt_k
         model = KMeans(init="random", n_clusters=opt_k, n_init=10, max_iter=300, random_state=42)
         model.fit(scaled_X)
         self.votes_dist_df['Label'] = model.labels_
@@ -291,40 +299,15 @@ class Voter:
         self.voters = voters
         self.voters['Towns count'] = self.votesdf.groupby('Label')['uid'].count()
         self.add_external_data()
-        j = 3
-
-    def vote_sampling(self, n=50):
-        if type(n) is not tuple:
-            n = (n, 1)
-        n_votes = n[0]
-        n_samples = n[1]
-        samples = np.random.choice(self.norm_count.index, p=self.norm_count.values, size=n)
-        df = pd.DataFrame(index=range(n_votes), columns=range(n_samples), data=samples)
-        v = df.apply(pd.value_counts).fillna(0).astype(int).T
-
-        for c in self.parties:
-            if c not in v.columns:
-                v[c] = 0
-        return v
-
-    def optimize(self):
-        v = self.vote_sampling((100, 1000))
-
-        s = v.sum(axis=1)
-
-        parties = len(self.parties)
-        voters = self.meatavoters
-        votes_per_voter = 3
-
-        votes = pd.DataFrame(index=[f'a{i}' for i in range(voters)], columns=self.parties, data=0)
-        for voter_i, party_i in enumerate(self.norm_count.head(voters).index.to_list()):
-            votes.loc[f'a{voter_i}', party_i] = 1.0
 
     def export(self):
         for df, title in [
             (self.votes_dist_df, 'votes distributions'),
             (self.voters, 'Meta voters'),
             (self.votesdf, 'votes unnormalized'),
+            (self.rawdf, 'Raw data'),
+            (self.distances, 'town distances'),
+
         ]:
             if df is not None:
                 df.to_csv(os.path.join(self.outpath, f'{title}.csv'), encoding='utf-8-sig')
@@ -335,8 +318,62 @@ class Voter:
         for c in df['Label'].unique():
             r = df[df['Label'].eq(c)]['שם ישוב'].values
             tdf.loc[range(len(r)), c] = df[df['Label'].eq(c)]['שם ישוב'].values
+
+        self.town_clusters = tdf
         title = 'Towns cluster'
         tdf.to_csv(os.path.join(self.outpath, f'{title}.csv'), encoding='utf-8-sig')
+
+        title = 'notes signs'
+        with open(os.path.join(self.outpath, f'{title}.json'), 'w', encoding='utf-8') as file:
+            json.dump(self.ballots, file, ensure_ascii=False, indent=4)
+
+        # Additional information
+        info = dict()
+        info['metadata'] = self.metadata
+        info['parties'] = self.parties
+        info['non_empy_parties'] = self.non_empy_parties.index.to_list()
+        info['k'] = self.k
+        title = 'additional info'
+        with open(os.path.join(self.outpath, f'{title}.json'), 'w', encoding='utf-8') as file:
+            json.dump(info, file, ensure_ascii=False, indent=4)
+
+    def stats_import(self):
+        s_time = datetime.datetime.now()
+
+        title = 'votes distributions'
+        self.votes_dist_df = pd.read_csv(os.path.join(self.outpath, f'{title}.csv'), encoding='utf-8-sig')
+
+        title = 'Meta voters'
+        self.voters = pd.read_csv(os.path.join(self.outpath, f'{title}.csv'), encoding='utf-8-sig')
+
+        title = 'votes unnormalized'
+        self.votesdf = pd.read_csv(os.path.join(self.outpath, f'{title}.csv'), encoding='utf-8-sig')
+
+        title = 'Towns cluster'
+        self.town_clusters = pd.read_csv(os.path.join(self.outpath, f'{title}.csv'), encoding='utf-8-sig')
+
+        title = 'Raw data'
+        self.rawdf = pd.read_csv(os.path.join(self.outpath, f'{title}.csv'), encoding='utf-8-sig')
+
+        title = 'town distances'
+        self.distances = pd.read_csv(os.path.join(self.outpath, f'{title}.csv'), encoding='utf-8-sig')
+
+        title = 'notes signs'
+        with open(os.path.join(self.outpath, f'{title}.json'), encoding='utf-8-sig') as file:
+            self.ballots = json.load(file)
+
+        title = 'additional info'
+        with open(os.path.join(self.outpath, f'{title}.json'), encoding='utf-8-sig') as file:
+            info = json.load(file)
+            self.metadata = info['metadata']
+            self.parties = info['parties']
+            self.k = info['k']
+            non_empy_parties = info['non_empy_parties']
+            self.non_empy_parties = pd.Series(index=non_empy_parties, data=True)
+
+        e_time = datetime.datetime.now()
+        d_time = e_time - s_time
+        print(f'Data load completed. Time: {d_time}')
 
 
 if __name__ == '__main__':
@@ -344,9 +381,11 @@ if __name__ == '__main__':
     data_path = os.path.join(root_path, 'data')
 
     votes_csv_path = data_path + '\\' + 'votes per settlement 2021.csv'
-    ballots_path = r"C:\school\PoliticalShapley\pull election underline distribution\data\votes per settlement 2021 ballots.json"
+    ballots_path = r"C:\school\PoliticalShapley\statistics\data\votes per settlement 2021 ballots.json"
 
-    voter = Voter(votes_csv_path, ballots_path=ballots_path)
+    voter = Voter()
+    voter.initialize(votes_csv_path, ballots_path=ballots_path)
     voter.cluster()
     voter.export()
+    voter.stats_import()
     print("END OF CODE.")

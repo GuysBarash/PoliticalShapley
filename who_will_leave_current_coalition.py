@@ -247,7 +247,7 @@ if __name__ == '__main__':
         govt_state.run()
         curr_shaps = govt_state.get_shapley()
 
-        new_state = State(campaign_value=campaign_value, impossible_moves=impossible_moves)
+        new_state = State(campaign_value=campaign_value)
         new_state.add_parties(new_prty)
         new_state.add_restrictions(new_disagree)
         new_state.run()
