@@ -106,6 +106,9 @@ class Voter:
         self.distances = pd.DataFrame(index=names, columns=names, data=dist)
 
     def add_external_data(self):
+        cols_to_mean = list()
+        cols_to_most_common = list()
+
         section_ethnicity = False
         if section_ethnicity:
             ethdf = pd.read_csv(os.path.join(self.lms_path, 'ethnicity.csv'), encoding='utf-8-sig')
@@ -164,6 +167,18 @@ class Voter:
             q['density'] = health['Density'].str.replace(',', '').apply(pd.to_numeric, args=('coerce',))
             self.votesdf = self.votesdf.merge(q, left_on='uid', right_on='uid', how='outer')
 
+        section_age = True
+        if section_age:
+            age = pd.read_csv(os.path.join(self.lms_path, 'age.csv'), encoding='utf-8-sig')
+            age = age[~age['uid'].isna()]
+
+            age_bins = [c for c in age.columns if c not in ['town', 'uid', 'total population']]
+            q = age[[c for c in age.columns if c not in ['town']]]
+            for c in ['age 0 to 5', 'age 5 to 18', 'age 19 to 45', 'age 46 to 55', 'age 56 to 64', 'age 65 and above']:
+                q[c] = q[c].astype(float) / q['total population'].astype(float)
+            self.votesdf = self.votesdf.merge(q, left_on='uid', right_on='uid', how='outer')
+            cols_to_mean += age_bins + ['total population']
+
         section_general = True
         if section_general:
             gendf = pd.read_csv(os.path.join(self.lms_path, 'general.csv'), encoding='utf-8-sig')
@@ -180,37 +195,85 @@ class Voter:
                 'population']
             self.votesdf = self.votesdf.merge(q, left_on='uid', right_on='uid', how='outer')
 
+        section_crime = True
+        if section_crime:
+            crime = pd.read_csv(os.path.join(self.lms_path, 'police_info.csv'), encoding='utf-8-sig')
+            for t in crime.columns:
+                if 'Unnamed' in t:
+                    crime = crime.drop(t, axis=1)
+
+            cols = ['Crime public security', 'Crime moral', 'Crime property',
+                    'Crime sex', 'Crime cheat', 'Crime people', 'Crime body',
+                    'Crime public order', 'Crime license', 'Crime financial',
+                    'Crime driving', 'Crime beuracracy', 'Crime of definition',
+                    'Crime other']
+            q = pd.DataFrame(index=crime.index)
+            q['uid'] = crime['uid'].astype(int)
+            q['Crime public security'] = crime['עבירות בטחון'].astype(int)
+            q['Crime moral'] = crime['עבירות כלפי המוסר'].astype(int)
+            q['Crime property'] = crime['עבירות כלפי הרכוש'].astype(int)
+            q['Crime sex'] = crime['עבירות מין'].astype(int)
+            q['Crime cheat'] = crime['עבירות מרמה'].astype(int)
+            q['Crime people'] = crime['עבירות נגד אדם'].astype(int)
+            q['Crime body'] = crime['עבירות נגד גוף'].astype(int)
+            q['Crime public order'] = crime['עבירות סדר ציבורי'].astype(int)
+            q['Crime license'] = crime['עבירות רשוי'].astype(int)
+            q['Crime financial'] = crime['עבירות כלכליות'].astype(int)
+            q['Crime driving'] = crime['עבירות תנועה'].astype(int)
+            q['Crime beuracracy'] = crime['עבירות מנהליות'].astype(int)
+            q['Crime of definition'] = crime['סעיפי הגדרה'].astype(int)
+            q['Crime other'] = crime['שאר עבירות'].astype(int)
+            q['Crimes total'] = q[cols].sum(axis=1)
+            self.votesdf = self.votesdf.merge(q, left_on='uid', right_on='uid', how='outer')
+
+            cols_to_normal = cols + ['Crimes total']
+            cols_to_mean += cols + ['Crimes total']
+            for c in cols_to_normal:
+                self.votesdf[c] = (100 * self.votesdf[c].astype(float)) / self.votesdf['population']
+
+        section_mosques = True
+        if section_mosques:
+            reldf = pd.read_csv(os.path.join(self.lms_path, 'Mosques.csv'), encoding='utf-8-sig', index_col=0)
+
+            self.votesdf = self.votesdf.merge(reldf, left_on='uid', right_on='uid', how='outer')
+            cols_to_mean += ['Mosques']
+            cols_to_normal = ['Mosques']
+            for c in cols_to_normal:
+                self.votesdf[c] = (100 * self.votesdf[c].astype(float)) / self.votesdf['population'].astype(float)
+
         self.votesdf = self.votesdf[~self.votesdf['Label'].isna()]
+        self.voters['Leading party'] = self.voters[[c for c in self.voters.columns if c in self.parties]].idxmax(
+            axis=1)
 
         section_add_means = True
         if section_add_means:
-            new_cols = ['Jews', 'Arab-Muslim', 'Arab-Christian', 'Druze',
-                        'Bagrut', 'Degree',
-                        'under 18', 'above 75', 'natural growth', 'density',
-                        'Salary', 'JINI',
-                        'population', 'Jews pop', 'Non-Jews pop',
-                        ]
-            for c in new_cols:
+            cols_to_mean += ['Jews', 'Arab-Muslim', 'Arab-Christian', 'Druze',
+                             'Bagrut', 'Degree',
+                             'under 18', 'above 75', 'natural growth', 'density',
+                             'Salary', 'JINI',
+                             'population', 'Jews pop', 'Non-Jews pop',
+                             ]
+            for c in cols_to_mean:
                 if c not in self.votesdf.columns:
                     continue
                 df = self.votesdf[['Label', c]]
                 g = df.groupby('Label')
                 nullratio = g.agg({c: lambda x: x.isnull().mean()})
                 nullratio = nullratio[nullratio < 0.6].dropna()
-                self.voters.loc[nullratio.index.astype(int).to_list(), c] = g[c].mean()
+                self.voters.loc[nullratio.index.astype(int).to_list(), c] = g[c].median()
 
         section_add_most_common = True
         if section_add_most_common:
-            new_cols = ['county', 'Settelment type'
-                        ]
-            for c in new_cols:
+            cols_to_most_common += ['county', 'Settelment type'
+                                    ]
+            for c in cols_to_most_common:
                 if c not in self.votesdf.columns:
                     continue
                 df = self.votesdf[['Label', c]]
                 g = df.groupby('Label')
 
                 nullratio = g.agg({c: lambda x: x.isnull().mean()})
-                nullratio = nullratio[nullratio < 0.6].dropna()
+                nullratio = nullratio[nullratio < 0.5].dropna()
                 self.voters.loc[nullratio.index.astype(int).to_list(), c] = g[c].agg(
                     lambda x: x.value_counts().index[0])
 
@@ -387,5 +450,4 @@ if __name__ == '__main__':
     voter.initialize(votes_csv_path, ballots_path=ballots_path)
     voter.cluster()
     voter.export()
-    voter.stats_import()
     print("END OF CODE.")
