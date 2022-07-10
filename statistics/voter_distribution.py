@@ -443,8 +443,8 @@ if __name__ == '__main__':
     root_path = os.path.dirname(__file__)
     data_path = os.path.join(root_path, 'data')
 
-    votes_csv_path = data_path + '\\' + 'votes per settlement 2021.csv'
-    ballots_path = r"C:\school\PoliticalShapley\statistics\data\votes per settlement 2021 ballots.json"
+    votes_csv_path = os.path.join(data_path,'votes per settlement 2021.csv')
+    ballots_path = os.path.join(data_path, "votes per settlement 2021 ballots.json")
 
     voter = Voter()
     voter.initialize(votes_csv_path, ballots_path=ballots_path)

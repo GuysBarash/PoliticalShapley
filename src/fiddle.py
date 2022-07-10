@@ -203,8 +203,8 @@ class PoliticalShapley:
             self.coalitions_value.loc[good_coalitions, 'value'] = 100
 
         # Calculate shapley
-        self.shapley_values = pd.Series(index=self.parties.keys())
-        self.banzhf_values = pd.Series(index=self.parties.keys())
+        self.shapley_values = pd.Series(index=self.parties.keys(), dtype=float)
+        self.banzhf_values = pd.Series(index=self.parties.keys(), dtype=float)
         for c_prty in self.parties.keys():
             other_parties = [cp for cp in self.parties.keys() if cp != c_prty]
             withdf = self.coalitions_value[self.coalitions_value[c_prty].eq(1)]
@@ -343,8 +343,8 @@ def get_weak_spots(base, prty):
             coalitions_without_prty = coalitions[coalitions[prty] <= 0]
             sr.loc[foe, mndts_stolen] = shap_t.get_shapley(prty)
 
-            # if foe == 'new_hope':
-            #     shap_t.to_csv(title='likud_attacked')
+            # if foe == 'New Hope (Saar)':
+            #     shap_t.to_csv(title='Likud_attacked')
 
     for i in range(1, mx_mandates_to_steal + 1):
         if sr[i].unique().shape[0] > 1:
@@ -388,8 +388,8 @@ def which_rule_to_break(base, prty):
         df.loc[disagree_prty, 'Shap gain'] = shap_t.get_shapley(disagree_prty) / base.get_shapley(disagree_prty)
         df.loc[disagree_prty, ['options with', 'options without']] = len(coalitions_with_prty), len(
             coalitions_without_prty)
-        if disagree_prty in ['new_hope', 'meretz']:
-            shap_t.to_csv(title=f'{disagree_prty}_joined_likud')
+        if disagree_prty in ['New Hope (Saar)', 'Meretz']:
+            shap_t.to_csv(title=f'{disagree_prty}_joined_Likud')
 
     df = df.sort_values(by='Shap gain', ascending=False)
     return df
@@ -532,7 +532,7 @@ class State(PoliticalShapley):
     def get_players(self):
         return list(self.parties.keys())
 
-    def get_restrictions(self, player):
+    def get_restrictions(self, playe):
         lret = deepcopy(self.disagree.get(player, list()))
         for k in self.disagree.keys():
             if k == player:
@@ -541,7 +541,7 @@ class State(PoliticalShapley):
                 if player in self.disagree[k]:
                     lret += [k]
 
-        return list(set(lret))
+        return list(set(self.disagree.keys()))
 
     def get_score(self, player=None):
         if player is not None:
@@ -551,6 +551,39 @@ class State(PoliticalShapley):
             shaps = self.get_shapley()
             mandates = self.get_mandates()
         return shaps
+
+    def get_actions_poiter_at(self, player):
+        if player not in self.get_players():
+            # raise Exception(f"No such player: {player}")
+            return list()
+
+        campaign_actions = list()
+        for src in self.get_players():
+            if src == player:
+                continue
+            else:
+                if self.parties.get(src, 0) > 0:
+                    t_action = ('Campaign', src, player)
+                    campaign_actions.append(t_action)
+
+        if self.impossible_moves is not None:
+            campaign_actions = [t for t in campaign_actions if t not in self.impossible_moves]
+        elif self.voter is not None:
+            pass
+        else:
+            pass
+
+        breaking_promise_actions = list()
+        for p1 in self.disagree.keys():
+            for p2 in self.disagree[p1]:
+                if p1 == player or p2 == player:
+                    continue
+                else:
+                    t_action = ('Break', p1, p2)
+                    breaking_promise_actions.append(t_action)
+
+        ret = breaking_promise_actions + campaign_actions
+        return list(set(ret))
 
     def get_actions(self, player):
         if player not in self.get_players():
@@ -1117,47 +1150,43 @@ if __name__ == '__main__':
     if section_parameters:
         # Current state:
         govnt_prty = dict()
-        govnt_prty['Likud'] = 30
-        govnt_prty['New Hope (Saar)'] = 6
-        govnt_prty['Yamina (Bennett)'] = 7
-        govnt_prty['Yesh Atid (Lapid)'] = 17
-        govnt_prty['Joint list'] = 6
+        govnt_prty['Likud'] = 36
+        govnt_prty['Yesh Atid (Lapid)'] = 23
+        govnt_prty['Religious Zionists'] = 10
+        govnt_prty['Blue and White (Gantz)'] = 9
         govnt_prty['Shas'] = 9
         govnt_prty['United Torah Judaism'] = 7
-        govnt_prty['Israel Beitenu'] = 7
-        govnt_prty['Religious Zionists'] = 6
-        govnt_prty['Meretz'] = 6
-        govnt_prty['Avoda'] = 7
-        govnt_prty['Blue and White (Gantz)'] = 8
+        govnt_prty['Joint list'] = 6
+        govnt_prty['Avoda'] = 6
+        govnt_prty['Israel Beitenu'] = 6
+        govnt_prty['New Hope (Saar)'] = 5
         govnt_prty['Raam (Abbas)'] = 4
 
         govnt_disagree = dict()
         govnt_disagree['Likud'] = ['New Hope (Saar)', 'Blue and White (Gantz)', 'Israel Beitenu', 'Yesh Atid (Lapid)',
                                    'Avoda', 'Meretz']
-        govnt_disagree['Joint list'] = ['Likud', 'Religious Zionists']
+        govnt_disagree['Religious Zionists'] = ['Raam (Abbas)', 'Joint list']
         govnt_disagree['Yesh Atid (Lapid)'] = ['Shas', 'United Torah Judaism']
 
-        # New state:
-        new_prty = dict()
-        new_prty['Likud'] = 34
-        new_prty['New Hope (Saar)'] = 0
-        new_prty['Yamina (Bennett)'] = 6
-        new_prty['Yesh Atid (Lapid)'] = 19
-        new_prty['Joint list'] = 6
-        new_prty['Shas'] = 9
-        new_prty['United Torah Judaism'] = 7
-        new_prty['Israel Beitenu'] = 6
-        new_prty['Religious Zionists'] = 7
-        new_prty['Meretz'] = 5
-        new_prty['Avoda'] = 7
-        new_prty['Blue and White (Gantz)'] = 9
-        new_prty['Raam (Abbas)'] = 5
-
-        new_disagree = dict()
-        new_disagree['Likud'] = ['New Hope (Saar)', 'Blue and White (Gantz)', 'Yesh Atid (Lapid)', 'Avoda', 'Meretz',
-                                 'Israel Beitenu']
-        new_disagree['Joint list'] = ['Likud', 'Religious Zionists']
-        new_disagree['Yesh Atid (Lapid)'] = ['Shas', 'United Torah Judaism']
+        # # New state:
+        # new_prty = dict()
+        # new_prty['Likud'] = 36
+        # new_prty['Yesh Atid (Lapid)'] = 23
+        # new_prty['Religious Zionists'] = 10
+        # new_prty['Blue and White (Gantz)'] = 9
+        # new_prty['Shas'] = 9
+        # new_prty['United Torah Judaism'] = 7
+        # new_prty['Joint list'] = 6
+        # new_prty['Avoda'] = 6
+        # new_prty['Israel Beitenu'] = 6
+        # new_prty['New Hope (Saar)'] = 5
+        # new_prty['Raam (Abbas)'] = 4
+        #
+        # new_disagree = dict()
+        # new_disagree['Likud'] = ['New Hope (Saar)', 'Blue and White (Gantz)', 'Israel Beitenu', 'Yesh Atid (Lapid)',
+        #                          'Avoda', 'Meretz']
+        # new_disagree['Religious Zionists'] = ['Raam (Abbas)', 'Joint list']
+        # new_disagree['Yesh Atid (Lapid)'] = ['Shas', 'United Torah Judaism']
 
         current_govt = ['New Hope (Saar)', 'Yamina (Bennett)', 'Yesh Atid (Lapid)', 'Israel Beitenu', 'Meretz', 'Avoda',
                         'Blue and White (Gantz)', 'Raam (Abbas)']
@@ -1202,7 +1231,7 @@ if __name__ == '__main__':
         player = 'Yamina (Bennett)'
         t_state = deepcopy(new_state)
 
-    section_scan_all_moves = False
+    section_scan_all_moves = True
     if section_scan_all_moves:
         resdf = None
         significant_players = current_govt + ['Likud']
@@ -1229,8 +1258,9 @@ if __name__ == '__main__':
 
         resdf['Explode Govt'] = resdf['src Govt gain'] < resdf['src gain']
         resdf.to_csv(os.path.join(path_root, 'moves.csv'))
+        print('Likely moves stored at: ' + os.path.join(path_root, 'moves.csv'))
 
-    section_apply_specific_moves = True
+    section_apply_specific_moves = False
     if section_apply_specific_moves:
         resdf = None
         player = 'Likud'

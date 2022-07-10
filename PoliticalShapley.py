@@ -160,6 +160,10 @@ class PoliticalShapley:
         # Check validity
         self.coalitions_validity['invalid_count'] = 0
         for c_prty, antiprtys in self.disagree.items():
+            if c_prty not in self.parties.keys():
+                continue
+            antiprtys = [cp for cp in self.parties.keys() if cp in antiprtys]
+
             if c_prty in self.coalitions_validity:
                 prty_idx = self.coalitions_validity[c_prty].eq(1)
                 cvdf = self.coalitions_validity[prty_idx]
@@ -185,7 +189,7 @@ class PoliticalShapley:
             sig_sr.loc[sig_sr['seats'] < 61, 'supervalue'] = 0
 
             gooddf = sig_sr.loc[good_coalitions]
-            for goodidx in tqdm(gooddf.index.to_list(), desc='Supergroups'):
+            for goodidx in tqdm(gooddf.index.to_list(), desc='Supergroups', disable=True):
                 gsr = self.coalitions.loc[goodidx]
                 good_cols = gsr[gsr > 0].index.to_list()
                 c_size = len(good_cols)
@@ -197,8 +201,8 @@ class PoliticalShapley:
             self.coalitions_value.loc[good_coalitions, 'value'] = 100
 
         # Calculate shapley
-        self.shapley_values = pd.Series(index=self.parties.keys())
-        self.banzhf_values = pd.Series(index=self.parties.keys())
+        self.shapley_values = pd.Series(index=self.parties.keys(), dtype=float)
+        self.banzhf_values = pd.Series(index=self.parties.keys(), dtype=float)
         for c_prty in self.parties.keys():
             other_parties = [cp for cp in self.parties.keys() if cp != c_prty]
             withdf = self.coalitions_value[self.coalitions_value[c_prty].eq(1)]
@@ -283,7 +287,7 @@ class PoliticalShapley:
 
 def get_campagin_tactics(base, prty):
     prts = [k for k in base.parties.keys() if k != prty]
-    restrictions = base.govnt_disagree
+    restrictions = base.disagree
 
     mx_mandates_to_steal = 4
     sr = pd.DataFrame(columns=range(1, mx_mandates_to_steal + 1), index=prts)
@@ -469,23 +473,21 @@ def dict_to_latex_table(parties, dispute, print_parties=False, print_restriction
 
 if __name__ == '__main__':
     prty = dict()
-    prty['likud'] = 30
-    prty['new_hope'] = 6
-    prty['yamina'] = 7
-    prty['yesh_atid'] = 17
-    prty['meshutefet'] = 6
+    prty['likud'] = 36
+    prty['yesh_atid'] = 23
+    prty['tzionot_datit'] = 10
+    prty['kahol_lavan'] = 9
     prty['shas'] = 9
     prty['yahadut_ha_tora'] = 7
-    prty['israel_beitenu'] = 7
-    prty['tzionot_datit'] = 6
-    prty['meretz'] = 6
-    prty['avoda'] = 7
-    prty['kahol_lavan'] = 8
+    prty['meshutefet'] = 6
+    prty['avoda'] = 6
+    prty['israel_beitenu'] = 6
+    prty['new_hope'] = 5
     prty['raam'] = 4
 
     disagree = dict()
     disagree['likud'] = ['new_hope', 'kahol_lavan', 'israel_beitenu', 'yesh_atid', 'avoda', 'meretz']
-    disagree['meshutefet'] = ['likud', 'tzionot_datit']
+    disagree['tzionot_datit'] = ['raam', 'meshutefet']
     disagree['yesh_atid'] = ['shas', 'yahadut_ha_tora']
 
 if __name__ == '__main__':
@@ -500,17 +502,21 @@ if __name__ == '__main__':
     df = shap.get_mandates()
     df.to_csv(os.path.join(path_root, 'Mandates.csv'))
     display(df)
+    print("Mandates df saved to: " + os.path.join(path_root, 'Mandates.csv'))
     print("----- Current Shapley ----- ")
     df = pd.DataFrame(shap.get_shapley())
     df.to_csv(os.path.join(path_root, 'Shapley_vals.csv'))
     display(df)
+    print("Current Shapley df saved to: " + os.path.join(path_root, 'Shapley_vals.csv'))
     print("----- Coalitions ----- ")
     df = shap.get_possible_govt()
     df.to_csv(os.path.join(path_root, 'Coalitions.csv'))
+    display(df)
+    print("Possible Coalitions df saved to: " + os.path.join(path_root, 'Coalitions.csv'))
 
     print("-------------------------")
     print("-------------------------")
-    prty = 'avoda'
+    prty = 'israel_beitenu'
     prty_val = shap.get_shapley(prty)
     print(f"{prty}: {prty_val}")
     print(f"---------------------")

@@ -176,13 +176,20 @@ if __name__ == '__main__':
     if section_parameters:
         # Current state:
         govnt_prty = dict()
-        govnt_prty['Likud'] = 30
+        govnt_prty['Likud'] = 36
+        govnt_prty['Yesh Atid (Lapid)'] = 23
+        govnt_prty['Religious Zionists'] = 10
+        govnt_prty['Blue and White (Gantz)'] = 9
+        govnt_prty['Shas'] = 9
+        govnt_prty['United Torah Judaism'] = 7
+        govnt_prty['Joint arab list'] = 6
+
         govnt_prty['New Hope (Saar)'] = 6
         govnt_prty['Yamina (Bennett)'] = 7
         govnt_prty['Yesh Atid (Lapid)'] = 17
-        govnt_prty['Joint list'] = 6
+
         govnt_prty['Shas'] = 9
-        govnt_prty['United Torah Judaism'] = 7
+
         govnt_prty['Israel Beitenu'] = 7
         govnt_prty['Religious Zionists'] = 6
         govnt_prty['Meretz'] = 6
@@ -193,7 +200,8 @@ if __name__ == '__main__':
         govnt_disagree = dict()
         govnt_disagree['Likud'] = ['New Hope (Saar)', 'Blue and White (Gantz)', 'Israel Beitenu', 'Yesh Atid (Lapid)',
                                    'Avoda', 'Meretz']
-        govnt_disagree['Joint list'] = ['Likud', 'Religious Zionists']
+        govnt_disagree['Joint arab list'] = ['Likud', 'Religious Zionists']
+        govnt_disagree['Religious Zionists'] = ['Joint arab list', 'Raam (Abbas)']
         govnt_disagree['Yesh Atid (Lapid)'] = ['Shas', 'United Torah Judaism']
 
         # New state:
@@ -202,7 +210,7 @@ if __name__ == '__main__':
         new_prty['New Hope (Saar)'] = 0
         new_prty['Yamina (Bennett)'] = 6
         new_prty['Yesh Atid (Lapid)'] = 19
-        new_prty['Joint list'] = 6
+        new_prty['Joint arab list'] = 6
         new_prty['Shas'] = 9
         new_prty['United Torah Judaism'] = 7
         new_prty['Israel Beitenu'] = 6
@@ -215,7 +223,7 @@ if __name__ == '__main__':
         new_disagree = dict()
         new_disagree['Likud'] = ['New Hope (Saar)', 'Blue and White (Gantz)', 'Yesh Atid (Lapid)', 'Avoda', 'Meretz',
                                  'Israel Beitenu']
-        new_disagree['Joint list'] = ['Likud', 'Religious Zionists']
+        new_disagree['Joint arab list'] = ['Likud', 'Religious Zionists']
         new_disagree['Yesh Atid (Lapid)'] = ['Shas', 'United Torah Judaism']
 
         current_govt = ['New Hope (Saar)', 'Yamina (Bennett)', 'Yesh Atid (Lapid)', 'Israel Beitenu', 'Meretz', 'Avoda',
@@ -302,7 +310,7 @@ if __name__ == '__main__':
             ('Campaign', 'Yamina (Bennett)', 'Likud'),
             ('Campaign', 'Yamina (Bennett)', 'Likud'),
             ('Campaign', 'Raam (Abbas)', 'Yesh Atid (Lapid)'),
-            ('Campaign', 'Raam (Abbas)', 'Joint list'),
+            ('Campaign', 'Raam (Abbas)', 'Joint arab list'),
         ]
         q_state = t_state.copy()
         for action in actions:
