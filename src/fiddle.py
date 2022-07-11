@@ -532,7 +532,7 @@ class State(PoliticalShapley):
     def get_players(self):
         return list(self.parties.keys())
 
-    def get_restrictions(self, playe):
+    def get_restrictions(self, player):
         lret = deepcopy(self.disagree.get(player, list()))
         for k in self.disagree.keys():
             if k == player:

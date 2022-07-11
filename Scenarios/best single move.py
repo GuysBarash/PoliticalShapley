@@ -2,6 +2,10 @@ from src.fiddle import State
 from src.fiddle import Voter
 from src.fiddle import clear_folder
 
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
 import os
 import sys
 
@@ -32,7 +36,7 @@ if __name__ == '__main__':
                                'Avoda', 'Meretz', 'Joint list']
     govnt_disagree['Religious Zionists'] = ['Raam (Abbas)', 'Joint list']
 
-    # govnt_disagree['Yesh Atid (Lapid)'] = ['Shas', 'United Torah Judaism']
+    govnt_disagree['Yesh Atid (Lapid)'] = ['Shas', 'United Torah Judaism']
     govnt_disagree['Meretz'] = ['Shas', 'United Torah Judaism']
     govnt_disagree['Avoda'] = ['Shas', 'United Torah Judaism']
 
@@ -53,7 +57,7 @@ if __name__ == '__main__':
         root_state.get_possible_govt().to_csv(os.path.join(results_path, 'base possible_govt.csv'))
         root_state.get_shapley().to_csv(os.path.join(results_path, 'base power.csv'))
 
-    section_next_move_values = False
+    section_next_move_values = True
     if section_next_move_values:
         actions = root_state.get_actions(player)
 
@@ -78,8 +82,8 @@ if __name__ == '__main__':
             msg = '------------------------------------'
             msg += '\n'
             msg += f'{src} [{action}] {trgt}\n'
-            msg += f'SRC ({src}) power [{curr_shaps[src]:.1f}] --> [{new_shap[src]:.1f}] ({shap_delta[src]:>.1f})' + '\n'
-            msg += f'TRGT ({trgt}) power [{curr_shaps[trgt]:.1f}] --> [{new_shap[trgt]:.1f}] ({shap_delta[trgt]:>.1f})' + '\n'
+            msg += f'SRC ({src}) power [{curr_shaps.get(src, 0):.1f}] --> [{new_shap.get(src, 0):.1f}] ({shap_delta.get(src, 0):>.1f})' + '\n'
+            msg += f'TRGT ({trgt}) power [{curr_shaps.get(trgt, 0):.1f}] --> [{new_shap.get(trgt, 0):.1f}] ({shap_delta.get(trgt, 0):>.1f})' + '\n'
 
             if action == 'Campaign':
                 msg += f'Seats: {gain:>.3f}' + '\n'
@@ -97,6 +101,10 @@ if __name__ == '__main__':
         results.sort(key=lambda d: d['POWER GAIN'], reverse=True)
         for idx, d in enumerate(results):
             token = d['token']
+            power_gain = d['POWER GAIN']
+            if power_gain <= 0:
+                continue
+
             title = f'{idx + 1} {token[0]} {token[1]} {token[2]}'
             folder_path = os.path.join(results_path, title)
             clear_folder(folder_path, delete_if_exist=True)
@@ -113,8 +121,15 @@ if __name__ == '__main__':
             print(d['msg'])
             print(f"Exported to: {folder_path}")
 
-    section_actions_to_look_out_for = True
-    if section_actions_to_look_out_for:
+        subsection_summerize_csv = True
+        if subsection_summerize_csv:
+            df = pd.DataFrame(results)
+            df = df[['token', 'SRC', 'TRGT', 'ACTION', 'POWER GAIN']]
+            df.to_csv(os.path.join(results_path, 'optimal moves summary.csv'), encoding="utf-8-sig")
+            print(f"Exported to: {results_path}")
+
+    section_actions_that_will_do_the_most_harm = True
+    if section_actions_that_will_do_the_most_harm:
         actions = root_state.get_actions_poiter_at(player)
 
         results = list()
@@ -128,12 +143,20 @@ if __name__ == '__main__':
             if action == 'Campaign':
                 gain, towns = root_state.evaluate_campaign_by_voters(src, trgt)
 
+            if player not in new_shap:
+                continue
+            if trgt not in new_shap:
+                continue
+            if src not in new_shap:
+                continue
+
             res = dict()
             res['token'] = action_tuple
             res['SRC'] = src
             res['TRGT'] = trgt
             res['ACTION'] = action
             res[f'POWER GAIN FOR {player}'] = shap_delta[player]
+            res[f'POWER GAIN FOR Actor'] = shap_delta[src]
 
             msg = '------------------------------------'
             msg += '\n'
@@ -158,6 +181,9 @@ if __name__ == '__main__':
         results.sort(key=lambda d: d[f'POWER GAIN FOR {player}'], reverse=False)
         for idx, d in enumerate(results):
             token = d['token']
+            power_gain = d[f'POWER GAIN FOR Actor']
+            if power_gain <= 0:
+                continue
             title = f'{idx + 1} blind-Spot {token[0]} {token[1]} {token[2]}'
             folder_path = os.path.join(results_path, title)
             clear_folder(folder_path, delete_if_exist=True)
@@ -173,6 +199,12 @@ if __name__ == '__main__':
 
             print(d['msg'])
             print(f"Exported to: {folder_path}")
+            subsection_summerize_csv = True
+            if subsection_summerize_csv:
+                df = pd.DataFrame(results)
+                df = df[['token', 'SRC', 'TRGT', 'ACTION', f'POWER GAIN FOR {player}', f'POWER GAIN FOR Actor']]
+                df.to_csv(os.path.join(results_path, 'vulnerability summary.csv'), encoding="utf-8-sig")
+                print(f"Exported to: {results_path}")
 
 if __name__ == '__main__':
     print("END OF CODE.")
