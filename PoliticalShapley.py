@@ -9,6 +9,8 @@ import os
 import shutil
 from tqdm import tqdm
 
+import json
+
 
 def clear_folder(path, clear_is_exists=True):
     if clear_is_exists and os.path.exists(path):
@@ -472,23 +474,44 @@ def dict_to_latex_table(parties, dispute, print_parties=False, print_restriction
 
 
 if __name__ == '__main__':
-    prty = dict()
-    prty['likud'] = 36
-    prty['yesh_atid'] = 23
-    prty['tzionot_datit'] = 10
-    prty['kahol_lavan'] = 9
-    prty['shas'] = 9
-    prty['yahadut_ha_tora'] = 7
-    prty['meshutefet'] = 6
-    prty['avoda'] = 6
-    prty['israel_beitenu'] = 6
-    prty['new_hope'] = 5
-    prty['raam'] = 4
+    data_path = os.path.join(os.path.dirname(__file__), 'coalitions_data')
+    game_path = os.path.join(data_path, 'news_13.json')
+    rules_path = os.path.join(data_path, 'rules.json')
 
-    disagree = dict()
-    disagree['likud'] = ['new_hope', 'kahol_lavan', 'israel_beitenu', 'yesh_atid', 'avoda', 'meretz']
-    disagree['tzionot_datit'] = ['raam', 'meshutefet']
-    disagree['yesh_atid'] = ['shas', 'yahadut_ha_tora']
+    if not os.path.exists(game_path):
+        prty = dict()
+        prty['likud'] = 31
+        prty['yesh_atid'] = 25
+        prty['tzionot_datit'] = 14
+        prty['Mahane_Mamlachti'] = 11
+        prty['shas'] = 8
+        prty['yahadut_ha_tora'] = 7
+        prty['israel_beitenu'] = 6
+        prty['avoda'] = 5
+        prty['meretz'] = 5
+        prty['Hadash_Taal'] = 4
+        prty['raam'] = 4
+
+        with open(game_path, 'w') as f:
+            json.dump(prty, f, indent=4)
+
+    else:
+        with open(game_path, 'r') as f:
+            prty = json.load(f)
+
+    if not os.path.exists(rules_path):
+        disagree = dict()
+        disagree['likud'] = ['yesh_atid', 'avoda', 'meretz', 'israel_beitenu', 'Hadash_Taal', 'Mahane_Mamlachti']
+        disagree['tzionot_datit'] = ['raam', 'Hadash_Taal']
+        disagree['yesh_atid'] = ['shas', 'yahadut_ha_tora']
+        disagree['israel_beitenu'] = ['shas', 'yahadut_ha_tora']
+
+        with open(rules_path, 'w') as f:
+            json.dump(disagree, f, indent=4)
+    else:
+        with open(rules_path, 'r') as f:
+            disagree = json.load(f)
+
 
 if __name__ == '__main__':
     path_root = os.path.join(os.path.dirname(__file__), 'Dump')

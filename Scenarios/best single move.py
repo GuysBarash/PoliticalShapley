@@ -10,6 +10,9 @@ import os
 import sys
 
 from tqdm import tqdm
+import json
+
+from tabulate import tabulate
 
 if __name__ == '__main__':
     root_path = os.path.dirname(os.path.abspath(__file__))
@@ -17,31 +20,55 @@ if __name__ == '__main__':
     clear_folder(results_path, delete_if_exist=True)
 
 if __name__ == '__main__':
-    # Current state:
-    govnt_prty = dict()
-    govnt_prty['Likud'] = 36
-    govnt_prty['Yesh Atid (Lapid)'] = 23
-    govnt_prty['Religious Zionists'] = 10
-    govnt_prty['Blue and White (Gantz)'] = 9
-    govnt_prty['Shas'] = 9
-    govnt_prty['United Torah Judaism'] = 7
-    govnt_prty['Joint list'] = 6
-    govnt_prty['Avoda'] = 6
-    govnt_prty['Israel Beitenu'] = 6
-    govnt_prty['New Hope (Saar)'] = 5
-    govnt_prty['Raam (Abbas)'] = 4
+    data_path = os.path.join(os.path.dirname(root_path), 'coalitions_data')
+    game_path = os.path.join(data_path, 'news_14.json')
+    rules_path = os.path.join(data_path, 'rules.json')
 
-    govnt_disagree = dict()
-    govnt_disagree['Likud'] = ['New Hope (Saar)', 'Israel Beitenu', 'Yesh Atid (Lapid)',
-                               'Avoda', 'Meretz', 'Joint list']
-    govnt_disagree['Religious Zionists'] = ['Raam (Abbas)', 'Joint list']
+    if not os.path.exists(game_path):
+        prty = dict()
+        prty['likud'] = 31
+        prty['yesh_atid'] = 25
+        prty['tzionot_datit'] = 14
+        prty['Mahane_Mamlachti'] = 11
+        prty['shas'] = 8
+        prty['yahadut_ha_tora'] = 7
+        prty['israel_beitenu'] = 6
+        prty['avoda'] = 5
+        prty['meretz'] = 5
+        prty['Hadash_Taal'] = 4
+        prty['raam'] = 4
 
-    govnt_disagree['Yesh Atid (Lapid)'] = ['Shas', 'United Torah Judaism']
-    govnt_disagree['Meretz'] = ['Shas', 'United Torah Judaism']
-    govnt_disagree['Avoda'] = ['Shas', 'United Torah Judaism']
+        with open(game_path, 'w') as f:
+            json.dump(prty, f, indent=4)
+
+    else:
+        with open(game_path, 'r') as f:
+            prty = json.load(f)
+
+    reload_rules = False
+    if (not reload_rules) or not os.path.exists(rules_path):
+        disagree = dict()
+        disagree['likud'] = ['yesh_atid', 'avoda', 'meretz', 'Hadash_Taal']
+        disagree['tzionot_datit'] = ['raam', 'Hadash_Taal']
+        disagree['meretz'] = ['tzionot_datit']
+        disagree['yesh_atid'] =  ['shas', 'yahadut_ha_tora']
+        disagree['israel_beitenu'] = ['shas', 'yahadut_ha_tora']
+        # disagree['Mahane_Mamlachti'] = ['tzionot_datit']
+        disagree['Hadash_Taal'] = ['yesh_atid', 'likud']
+
+        with open(rules_path, 'w') as f:
+            json.dump(disagree, f, indent=4)
+    else:
+        with open(rules_path, 'r') as f:
+            disagree = json.load(f)
 
 if __name__ == '__main__':
-    player = 'Religious Zionists'
+    # Current state:
+    govnt_prty = prty
+    govnt_disagree = disagree
+
+if __name__ == '__main__':
+    player = 'Likud'
 
     root_state = State()
     campaign_value = 2
@@ -54,10 +81,22 @@ if __name__ == '__main__':
 
     section_base_mode = True
     if section_base_mode:
-        root_state.get_possible_govt().to_csv(os.path.join(results_path, 'base possible_govt.csv'))
-        root_state.get_shapley().to_csv(os.path.join(results_path, 'base power.csv'))
+        pos_df = root_state.get_possible_govt()
+        pos_df.to_csv(os.path.join(results_path, 'base possible_govt.csv'))
+        powerdf = root_state.get_shapley()
+        powerdf.to_csv(os.path.join(results_path, 'base power.csv'))
+        print('Seats:')
+        seatsdf = pd.DataFrame(prty.items()).sort_values(1, ascending=False)
+        print(tabulate(seatsdf, headers='keys', tablefmt='psql'))
 
-    section_next_move_values = True
+        print('base power:')
+        print(tabulate(pd.DataFrame(powerdf), headers='keys', tablefmt='psql'))
+        print('base possible_govt:')
+        print(tabulate(pos_df, headers='keys', tablefmt='psql'))
+
+        print(f'Results saved to {results_path}')
+
+    section_next_move_values = False
     if section_next_move_values:
         actions = root_state.get_actions(player)
 
@@ -128,7 +167,7 @@ if __name__ == '__main__':
             df.to_csv(os.path.join(results_path, 'optimal moves summary.csv'), encoding="utf-8-sig")
             print(f"Exported to: {results_path}")
 
-    section_actions_that_will_do_the_most_harm = True
+    section_actions_that_will_do_the_most_harm = False
     if section_actions_that_will_do_the_most_harm:
         actions = root_state.get_actions_poiter_at(player)
 
