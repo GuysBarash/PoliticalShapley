@@ -89,7 +89,7 @@ if __name__ == '__main__':
     if not os.path.exists(data_path):
         os.mkdir(data_path)
 
-    persona = 'netanyahu'
+    persona = 'Gafni_Moshe'
     tweets_df, mentions_df = extract(persona)
     mentions_df_path = os.path.join(data_path, f'{persona}_mentions.csv')
     tweets_path = os.path.join(data_path, f'{persona}_tweets.csv')
